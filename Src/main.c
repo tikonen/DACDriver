@@ -21,6 +21,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
+#include "usbd_conf.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -83,32 +84,6 @@ uint16_t squareWave12bit[32] = {
 		0,0,0,0,0,0,0,0};
 
 
-void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
-{
-  /* Prevent unused argument(s) compilation warning */
-  UNUSED(hdac);
-  /*
-  for(int i=0; i < 32/2; i++) {
-	  squareWave12bit[i]--;
-	  if(squareWave12bit[i] > 4095) squareWave12bit[i] = 4095;
-  }
-  */
-}
-
-void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
-{
-	/* Prevent unused argument(s) compilation warning */
-	 UNUSED(hdac);
-
-}
-
-void HAL_DAC_DMAUnderrunCallbackCh1(DAC_HandleTypeDef *hdac)
-{
-  /* Prevent unused argument(s) compilation warning */
-  UNUSED(hdac);
-}
-
-
 /* USER CODE END 0 */
 
 /**
@@ -159,6 +134,7 @@ int main(void)
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)cosWave12bit, sizeof(cosWave12bit) / sizeof(uint16_t), DAC_ALIGN_12B_R);
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)squareWave12bit, sizeof(squareWave12bit)/ sizeof(uint16_t), DAC_ALIGN_12B_R);
 
+  // Green led on
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
   while (1)
   {
@@ -255,6 +231,21 @@ static void MX_DAC_Init(void)
 
 }
 
+// TIM2 is run by APBP1 timer clock that is twice the PCLK1 frequency if APB1 Prescaler is not 1
+#define FREQ_1kHz			1000
+#define FREQ_10kHz			10000
+#define FREQ_100kHz			100000
+#define FREQ_1MHz			1000000
+
+// NOTE. Timer configuration values must be max 16bit. These include at least Prescaler, Period and
+// Pulse in PWM mode.
+//#define TIMER_BASE_FREQ	    FREQ_1MHz
+#define APB1_CLOCK  (HAL_RCC_GetPCLK1Freq() * 2)
+//#define TIMER_PRESCALER 	(APB1_CLOCK / TIMER_BASE_FREQ) - 1)
+//#define TIMER_FREQ			(USBD_AUDIO_FREQ)
+//#define TIMER_PERIOD		((TIMER_BASE_FREQ / TIMER_FREQ) - 1)
+
+
 /**
   * @brief TIM6 Initialization Function
   * @param None
@@ -271,31 +262,13 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE BEGIN TIM6_Init 1 */
 
-  /*
-    Set timer period when it have reset
-    First you have to know max value for timer
-    In our case it is 16bit = 65535
-    To get your frequency for PWM, equation is simple
-
-    PWM_frequency = timer_tick_frequency / (TIM_Period + 1)
-
-    If you know your PWM frequency you want to have timer period set correct
-
-    TIM_Period = timer_tick_frequency / PWM_frequency - 1
-
-    In our case, for 10Khz PWM_frequency, set Period to
-
-    TIM_Period = 84000000 / 10000 - 1 = 8399
-
-    If you get TIM_Period larger than max timer value (in our case 65535),
-    you have to choose larger prescaler and slow down timer tick frequency
-   */
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 32768;
+  //htim6.Init.Period = 32768;
+  htim6.Init.Period = APB1_CLOCK / USBD_AUDIO_FREQ;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -308,7 +281,7 @@ static void MX_TIM6_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM6_Init 2 */
-
+  //__HAL_DBGMCU_FREEZE_TIM6();
   /* USER CODE END TIM6_Init 2 */
 
 }

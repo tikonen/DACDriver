@@ -143,6 +143,33 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
   AUDIO_GetState_FS
 };
 
+static uint16_t dmaLeftBuffer[AUDIO_TOTAL_BUF_SIZE / 2 / 2];
+static uint16_t dmaRightBuffer[AUDIO_TOTAL_BUF_SIZE / 2 / 2];
+
+int updateDMABuffers(const uint8_t *pbuf, uint32_t size)
+{
+#define _16BTO12B(s) ((s + 32767) >> 4)
+
+	int samples = size / 2; // two channels
+	const int16_t *src = (int16_t*)pbuf;
+	for(uint32_t i = 0; i < samples; i++) {
+		dmaLeftBuffer[i] = _16BTO12B(src[i*2]);
+		dmaRightBuffer[i] = _16BTO12B(src[i*2+1]);
+	}
+	return samples;
+}
+
+void submitDMABuffers(int samples, int first)
+{
+	extern DAC_HandleTypeDef hdac;
+	if(first) {
+	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_1);
+	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_2);
+	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_R);
+	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_R);
+	}
+}
+
 /* Private functions ---------------------------------------------------------*/
 /**
   * @brief  Initializes the AUDIO media low layer over USB FS IP
@@ -179,14 +206,19 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   */
 static int8_t AUDIO_AudioCmd_FS(uint8_t* pbuf, uint32_t size, uint8_t cmd)
 {
+	int samples;
   /* USER CODE BEGIN 2 */
   switch(cmd)
   {
-    case AUDIO_CMD_START:
-    break;
+    case AUDIO_CMD_START: // start from scratch
+    	samples = updateDMABuffers(pbuf, size);
+    	submitDMABuffers(samples, 1);
+    	break;
 
-    case AUDIO_CMD_PLAY:
-    break;	
+    case AUDIO_CMD_PLAY: // update current buffer
+    	samples = updateDMABuffers(pbuf, size);
+    	submitDMABuffers(samples, 0);
+    	break;
 
     case AUDIO_CMD_STOP:
     	break;
@@ -265,6 +297,36 @@ void HalfTransfer_CallBack_FS(void)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(hdac);
+
+  //HalfTransfer_CallBack_FS();
+
+  /*
+  for(int i=0; i < 32/2; i++) {
+	  squareWave12bit[i]--;
+	  if(squareWave12bit[i] > 4095) squareWave12bit[i] = 4095;
+  }
+  */
+}
+
+void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
+{
+	/* Prevent unused argument(s) compilation warning */
+	UNUSED(hdac);
+
+	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // Debug
+
+	//TransferComplete_CallBack_FS();
+}
+
+void HAL_DAC_DMAUnderrunCallbackCh1(DAC_HandleTypeDef *hdac)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(hdac);
+}
 
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
