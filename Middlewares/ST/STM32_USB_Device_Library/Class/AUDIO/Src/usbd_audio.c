@@ -607,16 +607,21 @@ void USBD_AUDIO_Sync(USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType)
 	USBD_AUDIO_HandleTypeDef *haudio;
 	haudio = (USBD_AUDIO_HandleTypeDef*) pdev->pClassData;
 
-	if (syncType == AUDIO_SYNC_COMPLETE) {
+	if (haudio->state != AUDIO_STATE_PLAY) {
+		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(NULL, 0,
+				AUDIO_CMD_IDLE, syncType);
+	} else {
 
 		int n = 0;
 		uint8_t *packets[AUDIO_PACKET_BATCH] = { 0 };
 		while (haudio->read_idx != haudio->write_idx && n < AUDIO_PACKET_BATCH) {
-			packets[n] = haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
+			packets[n] =
+					haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
 			haudio->read_idx++;
 			n++;
 		}
-		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(packets, n, AUDIO_CMD_PLAY);
+		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(packets, n,
+				AUDIO_CMD_PLAY, syncType);
 	}
 }
 
@@ -672,7 +677,8 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
     		}
     		((USBD_AUDIO_ItfTypeDef *)pdev->pUserData)->AudioCmd(packets,
     				AUDIO_PACKET_BATCH,
-    		        AUDIO_CMD_START);
+    		        AUDIO_CMD_START,
+					AUDIO_SYNC_HALF);
 
     		haudio->state = AUDIO_STATE_PLAY;
     	}

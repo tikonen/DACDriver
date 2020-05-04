@@ -66,18 +66,18 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint16_t sinWave12bit[32] = {
+const uint16_t sinWave12bit[32] = {
         2048,2447,2831,3185,3495,3750,3939,4056,
         4095,4056,3939,3750,3495,3185,2831,2447,
         2048,1648,1264,910,600,345,156,39,
         0,39,156,345,600,910,1264,1648 };
-uint16_t cosWave12bit[32] = {
+const uint16_t cosWave12bit[32] = {
         4095,4056,3939,3750,3495,3185,2831,2447,
         2048,1648,1264,910,600,345,156,39,
         0,39,156,345,600,910,1264,1648,
 		2048,2447,2831,3185,3495,3750,3939,4056};
 
-uint16_t squareWave12bit[32] = {
+const uint16_t squareWave12bit[32] = {
         4095,4095,4095,4095,4095,4095,4095,4095,
         0,0,0,0,0,0,0,0,
 		4095,4095,4095,4095,4095,4095,4095,4095,
@@ -130,8 +130,14 @@ int main(void)
   HAL_DAC_Start(&hdac,DAC_CHANNEL_1);
   HAL_DAC_Start(&hdac,DAC_CHANNEL_2);
 
+  // Zero level
+  HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 2047U);
+  HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2047U);
+
+  extern void initDMA();
+  initDMA();
   // https://elastic-notes.blogspot.com/p/blog-page_1.html
-  // Start idle signal
+  // Start test signal
   //HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)cosWave12bit, sizeof(cosWave12bit) / sizeof(uint16_t), DAC_ALIGN_12B_R);
   //HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)sinWave12bit, sizeof(sinWave12bit)/ sizeof(uint16_t), DAC_ALIGN_12B_R);
 
@@ -232,20 +238,9 @@ static void MX_DAC_Init(void)
 
 }
 
+
 // TIM2 is run by APBP1 timer clock that is twice the PCLK1 frequency if APB1 Prescaler is not 1
-#define FREQ_1kHz			1000
-#define FREQ_10kHz			10000
-#define FREQ_100kHz			100000
-#define FREQ_1MHz			1000000
-
-// NOTE. Timer configuration values must be max 16bit. These include at least Prescaler, Period and
-// Pulse in PWM mode.
-//#define TIMER_BASE_FREQ	    FREQ_1MHz
 #define APB1_CLOCK  (HAL_RCC_GetPCLK1Freq() * 2)
-//#define TIMER_PRESCALER 	(APB1_CLOCK / TIMER_BASE_FREQ) - 1)
-//#define TIMER_FREQ			(USBD_AUDIO_FREQ)
-//#define TIMER_PERIOD		((TIMER_BASE_FREQ / TIMER_FREQ) - 1)
-
 
 /**
   * @brief TIM6 Initialization Function
@@ -255,20 +250,12 @@ static void MX_DAC_Init(void)
 static void MX_TIM6_Init(void)
 {
 
-  /* USER CODE BEGIN TIM6_Init 0 */
-
-  /* USER CODE END TIM6_Init 0 */
-
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /* USER CODE BEGIN TIM6_Init 1 */
-
-
-  /* USER CODE END TIM6_Init 1 */
+  // NOTE. Timer configuration values must be max 16bit. These include at least Prescaler, Period and Pulse in PWM mode
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  //htim6.Init.Period = 32768;
   htim6.Init.Period = APB1_CLOCK / USBD_AUDIO_FREQ;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)

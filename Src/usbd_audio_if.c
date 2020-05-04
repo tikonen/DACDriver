@@ -23,7 +23,7 @@
 #include "usbd_audio_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include <math.h>
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -118,7 +118,7 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 static int8_t AUDIO_Init_FS(uint32_t AudioFreq, uint32_t Volume, uint32_t options);
 static int8_t AUDIO_DeInit_FS(uint32_t options);
-static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd);
+static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd, uint8_t sync);
 static int8_t AUDIO_VolumeCtl_FS(uint8_t vol);
 static int8_t AUDIO_MuteCtl_FS(uint8_t cmd);
 static int8_t AUDIO_PeriodicTC_FS(uint8_t cmd);
@@ -143,16 +143,49 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
   AUDIO_GetState_FS
 };
 
-static uint16_t dmaLeftBuffer[AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
-static uint16_t dmaRightBuffer[AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
 
-int updateDMABuffers(uint8_t* packets[], uint32_t count)
+#define IDLE_TIMEOUT_MS 1000
+int idleCount = 0;
+uint16_t theta = 0;
+#define ZERO_LEVEL 2047U
+#define MS_PER_BATCH AUDIO_PACKET_BATCH
+
+static uint16_t __attribute__((aligned(8))) dmaLeftBuffer[2 * AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
+static uint16_t __attribute__((aligned(8))) dmaRightBuffer[2 * AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
+
+void updateDMABuffersIdle(int halve)
 {
-#define _16BTO12B(s) ((s + 32767) >> 4)
+	const uint32_t samples = sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2;
+		uint16_t *dstl = (uint16_t*)dmaLeftBuffer;
+		dstl += halve ? samples : 0;
+		uint16_t *dstr = (uint16_t*)dmaRightBuffer;
+		dstr+= halve ? samples : 0;
+
+	for(uint32_t i=0; i < samples; i++) {
+		dstl[i] = theta;
+		dstr[i] = theta;
+		theta += 4;
+	}
+	/*
+	// MCU is bit too slow to compute this
+	const float stepf = 2 * M_PI / (USBD_AUDIO_FREQ / 50);
+	for(uint32_t i=0; i < samples; i++) {
+		dstl[i] = sinf(theta) * ZERO_LEVEL + ZERO_LEVEL;
+		dstr[i] = cosf(theta) * ZERO_LEVEL + ZERO_LEVEL;
+		theta += stepf;
+	}
+	*/
+}
+
+int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
+{
+#define _16BTO12B(s) ((((int32_t)s + 32767) >> 4) & 0x0FFF)
 
 	const int samplesPerPacket = AUDIO_OUT_PACKET / 2 / 2;
-	uint16_t *dstl = dmaLeftBuffer;
-	uint16_t *dstr = dmaRightBuffer;
+	uint16_t *dstl = (uint16_t*)dmaLeftBuffer;
+	dstl += halve ? sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2 : 0;
+	uint16_t *dstr = (uint16_t*)dmaRightBuffer;
+	dstr += halve ? sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2 : 0;
 
 	for(int i=0; i < count; i++) {
 		uint16_t *packet = (uint16_t*)(packets[i]);
@@ -165,7 +198,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count)
 	}
 	for(int i=count; i < AUDIO_PACKET_BATCH; i++) {
 		for(int j=0; j < samplesPerPacket; j++) {
-			dstl[j] = dstr[j] = 2047U; // zero level
+			dstl[j] = dstr[j] = ZERO_LEVEL;
 		}
 		dstl += samplesPerPacket;
 		dstr += samplesPerPacket;
@@ -191,14 +224,23 @@ void submitDMABuffers(int samples)
 	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_R);
 }
 
+void initDMA()
+{
+	const uint32_t n = sizeof(dmaLeftBuffer) / sizeof(uint16_t);
 
+	for (uint32_t i = 0; i < n; i++) {
+		dmaLeftBuffer[i] = ZERO_LEVEL;
+		dmaRightBuffer[i] = ZERO_LEVEL;
+	}
+	submitDMABuffers(n);
+}
 
 /* Private functions ---------------------------------------------------------*/
 /**
   * @brief  Initializes the AUDIO media low layer over USB FS IP
   * @param  AudioFreq: Audio frequency used to play the audio stream.
   * @param  Volume: Initial volume level (from 0 (Mute) to 100 (Max))
-  * @param  options: Reserved for future use 
+  * @param  options: Reserved for future use
   * @retval USBD_OK if all operations are OK else USBD_FAIL
   */
 static int8_t AUDIO_Init_FS(uint32_t AudioFreq, uint32_t Volume, uint32_t options)
@@ -228,25 +270,33 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   * @param  cmd: Command opcode
   * @retval USBD_OK if all operations are OK else USBD_FAIL
   */
-static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd)
+static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd, uint8_t sync)
 {
-	int samples;
   /* USER CODE BEGIN 2 */
-  switch(cmd)
-  {
-    case AUDIO_CMD_START: // start from scratch
-    	samples = updateDMABuffers(packets, count);
-    	submitDMABuffers(samples);
-    	break;
+	switch (cmd) {
+	case AUDIO_CMD_START: // start from scratch
+		//samples = updateDMABuffers(packets, count);
+		updateDMABuffers(packets, count, 0);
+		idleCount = 0;
+		break;
 
-    case AUDIO_CMD_PLAY: // update current buffer
-    	samples = updateDMABuffers(packets, count);
-    	break;
+	case AUDIO_CMD_IDLE:
+	case AUDIO_CMD_PLAY: // update current buffer
+		if (count == 0 && idleCount >= IDLE_TIMEOUT_MS) {
+			idleCount = IDLE_TIMEOUT_MS;
+			updateDMABuffersIdle(sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+		} else {
+			updateDMABuffers(packets, count, sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+			if (count)
+				idleCount = 0;
+		}
 
-    case AUDIO_CMD_STOP:
-    	break;
-  }
-  return (USBD_OK);
+		break;
+
+	case AUDIO_CMD_STOP:
+		break;
+	}
+	return (USBD_OK);
   /* USER CODE END 2 */
 }
 
@@ -324,15 +374,7 @@ void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 {
   /* Prevent unused argument(s) compilation warning */
   UNUSED(hdac);
-
   HalfTransfer_CallBack_FS();
-
-  /*
-  for(int i=0; i < 32/2; i++) {
-	  squareWave12bit[i]--;
-	  if(squareWave12bit[i] > 4095) squareWave12bit[i] = 4095;
-  }
-  */
 }
 
 void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
@@ -341,6 +383,7 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 	UNUSED(hdac);
 
 	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // Debug
+	idleCount += MS_PER_BATCH;
 
 	TransferComplete_CallBack_FS();
 }

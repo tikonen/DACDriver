@@ -109,6 +109,7 @@ typedef enum
   AUDIO_CMD_START = 1,
   AUDIO_CMD_PLAY,
   AUDIO_CMD_STOP,
+  AUDIO_CMD_IDLE
 }AUDIO_CMD_TypeDef;
 
 /*
@@ -170,7 +171,7 @@ typedef struct
 {
     int8_t  (*Init)         (uint32_t  AudioFreq, uint32_t Volume, uint32_t options);
     int8_t  (*DeInit)       (uint32_t options);
-    int8_t  (*AudioCmd)     (uint8_t** packets, uint32_t count, uint8_t cmd);
+    int8_t  (*AudioCmd)     (uint8_t** packets, uint32_t count, uint8_t cmd, uint8_t sync);
     int8_t  (*VolumeCtl)    (uint8_t vol);
     int8_t  (*MuteCtl)      (uint8_t cmd);
     int8_t  (*PeriodicTC)   (uint8_t cmd);
