@@ -101,6 +101,8 @@
 /* Total size of the audio transfer buffer */
 #define AUDIO_TOTAL_BUF_SIZE                          ((uint16_t)(AUDIO_OUT_PACKET * AUDIO_OUT_PACKET_NUM))
 
+#define AUDIO_PACKET_BATCH 8
+
     /* Audio Commands enumeration */
 typedef enum
 {
@@ -109,7 +111,7 @@ typedef enum
   AUDIO_CMD_STOP,
 }AUDIO_CMD_TypeDef;
 
-
+/*
 typedef enum
 {
   AUDIO_OFFSET_NONE = 0,
@@ -118,6 +120,20 @@ typedef enum
   AUDIO_OFFSET_UNKNOWN,
 }
 AUDIO_OffsetTypeDef;
+*/
+typedef enum
+{
+  AUDIO_STATE_NONE = 0,
+  AUDIO_STATE_PLAY,
+}
+AUDIO_StateTypeDef;
+
+typedef enum
+{
+	AUDIO_SYNC_COMPLETE = 0,
+	AUDIO_SYNC_HALF = 1
+}
+AUDIO_SyncTypeDef;
 /**
   * @}
   */
@@ -140,11 +156,11 @@ USBD_AUDIO_ControlTypeDef;
 typedef struct
 {
   uint32_t                  alt_setting;
-  uint8_t                   buffer[AUDIO_TOTAL_BUF_SIZE];
-  AUDIO_OffsetTypeDef       offset;
-  uint8_t                    rd_enable;
-  uint16_t                   rd_ptr;
-  uint16_t                   wr_ptr;
+  uint8_t                   packets[AUDIO_OUT_PACKET_NUM][AUDIO_OUT_PACKET];
+  AUDIO_StateTypeDef       state;
+  //uint8_t                   rd_enable;
+  uint8_t                  read_idx;
+  uint8_t                  write_idx;
   USBD_AUDIO_ControlTypeDef control;
 }
 USBD_AUDIO_HandleTypeDef;
@@ -154,7 +170,7 @@ typedef struct
 {
     int8_t  (*Init)         (uint32_t  AudioFreq, uint32_t Volume, uint32_t options);
     int8_t  (*DeInit)       (uint32_t options);
-    int8_t  (*AudioCmd)     (uint8_t* pbuf, uint32_t size, uint8_t cmd);
+    int8_t  (*AudioCmd)     (uint8_t** packets, uint32_t count, uint8_t cmd);
     int8_t  (*VolumeCtl)    (uint8_t vol);
     int8_t  (*MuteCtl)      (uint8_t cmd);
     int8_t  (*PeriodicTC)   (uint8_t cmd);
@@ -190,7 +206,7 @@ extern USBD_ClassTypeDef  USBD_AUDIO;
 uint8_t  USBD_AUDIO_RegisterInterface  (USBD_HandleTypeDef   *pdev,
                                         USBD_AUDIO_ItfTypeDef *fops);
 
-void  USBD_AUDIO_Sync (USBD_HandleTypeDef *pdev, AUDIO_OffsetTypeDef offset);
+void  USBD_AUDIO_Sync (USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType);
 /**
   * @}
   */

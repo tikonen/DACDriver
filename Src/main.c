@@ -131,8 +131,9 @@ int main(void)
   HAL_DAC_Start(&hdac,DAC_CHANNEL_2);
 
   // https://elastic-notes.blogspot.com/p/blog-page_1.html
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)cosWave12bit, sizeof(cosWave12bit) / sizeof(uint16_t), DAC_ALIGN_12B_R);
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)squareWave12bit, sizeof(squareWave12bit)/ sizeof(uint16_t), DAC_ALIGN_12B_R);
+  // Start idle signal
+  //HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)cosWave12bit, sizeof(cosWave12bit) / sizeof(uint16_t), DAC_ALIGN_12B_R);
+  //HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)sinWave12bit, sizeof(sinWave12bit)/ sizeof(uint16_t), DAC_ALIGN_12B_R);
 
   // Green led on
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);

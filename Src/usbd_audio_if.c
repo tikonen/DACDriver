@@ -118,7 +118,7 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 static int8_t AUDIO_Init_FS(uint32_t AudioFreq, uint32_t Volume, uint32_t options);
 static int8_t AUDIO_DeInit_FS(uint32_t options);
-static int8_t AUDIO_AudioCmd_FS(uint8_t* pbuf, uint32_t size, uint8_t cmd);
+static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd);
 static int8_t AUDIO_VolumeCtl_FS(uint8_t vol);
 static int8_t AUDIO_MuteCtl_FS(uint8_t cmd);
 static int8_t AUDIO_PeriodicTC_FS(uint8_t cmd);
@@ -143,32 +143,55 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
   AUDIO_GetState_FS
 };
 
-static uint16_t dmaLeftBuffer[AUDIO_TOTAL_BUF_SIZE / 2 / 2];
-static uint16_t dmaRightBuffer[AUDIO_TOTAL_BUF_SIZE / 2 / 2];
+static uint16_t dmaLeftBuffer[AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
+static uint16_t dmaRightBuffer[AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
 
-int updateDMABuffers(const uint8_t *pbuf, uint32_t size)
+int updateDMABuffers(uint8_t* packets[], uint32_t count)
 {
 #define _16BTO12B(s) ((s + 32767) >> 4)
 
-	int samples = size / 2; // two channels
-	const int16_t *src = (int16_t*)pbuf;
-	for(uint32_t i = 0; i < samples; i++) {
-		dmaLeftBuffer[i] = _16BTO12B(src[i*2]);
-		dmaRightBuffer[i] = _16BTO12B(src[i*2+1]);
+	const int samplesPerPacket = AUDIO_OUT_PACKET / 2 / 2;
+	uint16_t *dstl = dmaLeftBuffer;
+	uint16_t *dstr = dmaRightBuffer;
+
+	for(int i=0; i < count; i++) {
+		uint16_t *packet = (uint16_t*)(packets[i]);
+		for(int i=0; i < samplesPerPacket;i++) {
+			dstl[i] = _16BTO12B(packet[i*2]);
+			dstr[i] = _16BTO12B(packet[i*2+1]);
+		}
+		dstl += samplesPerPacket;
+		dstr += samplesPerPacket;
 	}
-	return samples;
+	for(int i=count; i < AUDIO_PACKET_BATCH; i++) {
+		for(int j=0; j < samplesPerPacket; j++) {
+			dstl[j] = dstr[j] = 2047U; // zero level
+		}
+		dstl += samplesPerPacket;
+		dstr += samplesPerPacket;
+	}
+	return AUDIO_PACKET_BATCH * samplesPerPacket;
+
+#undef _16BTO12B
 }
 
-void submitDMABuffers(int samples, int first)
+void stopDMA()
 {
 	extern DAC_HandleTypeDef hdac;
-	if(first) {
 	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_1);
 	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_2);
+}
+
+
+void submitDMABuffers(int samples)
+{
+	extern DAC_HandleTypeDef hdac;
+	stopDMA();
 	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_R);
 	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_R);
-	}
 }
+
+
 
 /* Private functions ---------------------------------------------------------*/
 /**
@@ -197,6 +220,7 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   /* USER CODE END 1 */
 }
 
+
 /**
   * @brief  Handles AUDIO command.
   * @param  pbuf: Pointer to buffer of data to be sent
@@ -204,20 +228,19 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   * @param  cmd: Command opcode
   * @retval USBD_OK if all operations are OK else USBD_FAIL
   */
-static int8_t AUDIO_AudioCmd_FS(uint8_t* pbuf, uint32_t size, uint8_t cmd)
+static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd)
 {
 	int samples;
   /* USER CODE BEGIN 2 */
   switch(cmd)
   {
     case AUDIO_CMD_START: // start from scratch
-    	samples = updateDMABuffers(pbuf, size);
-    	submitDMABuffers(samples, 1);
+    	samples = updateDMABuffers(packets, count);
+    	submitDMABuffers(samples);
     	break;
 
     case AUDIO_CMD_PLAY: // update current buffer
-    	samples = updateDMABuffers(pbuf, size);
-    	submitDMABuffers(samples, 0);
+    	samples = updateDMABuffers(packets, count);
     	break;
 
     case AUDIO_CMD_STOP:
@@ -281,7 +304,7 @@ static int8_t AUDIO_GetState_FS(void)
 void TransferComplete_CallBack_FS(void)
 {
   /* USER CODE BEGIN 7 */
-  USBD_AUDIO_Sync(&hUsbDeviceFS, AUDIO_OFFSET_FULL);
+  USBD_AUDIO_Sync(&hUsbDeviceFS, AUDIO_SYNC_COMPLETE);
   /* USER CODE END 7 */
 }
 
@@ -292,7 +315,7 @@ void TransferComplete_CallBack_FS(void)
 void HalfTransfer_CallBack_FS(void)
 {
   /* USER CODE BEGIN 8 */
-  USBD_AUDIO_Sync(&hUsbDeviceFS, AUDIO_OFFSET_HALF);
+  USBD_AUDIO_Sync(&hUsbDeviceFS, AUDIO_SYNC_HALF);
   /* USER CODE END 8 */
 }
 
@@ -302,7 +325,7 @@ void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
   /* Prevent unused argument(s) compilation warning */
   UNUSED(hdac);
 
-  //HalfTransfer_CallBack_FS();
+  HalfTransfer_CallBack_FS();
 
   /*
   for(int i=0; i < 32/2; i++) {
@@ -319,7 +342,7 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 
 	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // Debug
 
-	//TransferComplete_CallBack_FS();
+	TransferComplete_CallBack_FS();
 }
 
 void HAL_DAC_DMAUnderrunCallbackCh1(DAC_HandleTypeDef *hdac)
