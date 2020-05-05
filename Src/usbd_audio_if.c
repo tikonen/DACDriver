@@ -479,6 +479,59 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   /* USER CODE END 1 */
 }
 
+struct AudioCommand
+{
+	uint8_t *packets[AUDIO_PACKET_BATCH*2];
+	uint32_t count;
+	uint8_t sync;
+	uint8_t cmd;
+} audioCommands[2];
+uint8_t cmdReadIdx = 0;
+uint8_t cmdWriteIdx = 0;
+
+// Called from main loop, interrupt may happen at any time.
+void Process_Audio_Command()
+{
+	if(cmdWriteIdx - cmdReadIdx == 0) return;
+
+	struct AudioCommand *cmd = &audioCommands[cmdReadIdx % 2];
+	cmdReadIdx++;
+
+	switch (cmd->cmd)
+	{
+	case AUDIO_CMD_START: // start from scratch
+		//NOTE we assume that start provides 2 * AUDIO_PACKET_BATCH of packets, otherwise
+		// the dma half/full interrupt update logic won't work.
+		stopDMA();
+		int samples = updateDMABuffers(cmd->packets, cmd->count,
+				0);
+		submitDMABuffers(samples);
+		idleTimer = 0;
+		break;
+
+	case AUDIO_CMD_IDLE:
+	case AUDIO_CMD_PLAY: // update current buffer
+		if (cmd->count == 0 && idleTimer >= IDLE_TIMEOUT_MS
+				&& !fIdleDisabled)
+		{
+			idleTimer = IDLE_TIMEOUT_MS;
+			updateDMABuffersIdle(
+					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+		}
+		else
+		{
+			updateDMABuffers(cmd->packets, cmd->count,
+					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+			if (cmd->count)
+				idleTimer = 0;
+		}
+
+		break;
+
+	case AUDIO_CMD_STOP:
+		break;
+	}
+}
 
 /**
   * @brief  Handles AUDIO command.
@@ -489,33 +542,18 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   */
 static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd, uint8_t sync)
 {
-  /* USER CODE BEGIN 2 */
-	switch (cmd) {
-	case AUDIO_CMD_START: // start from scratch
-		stopDMA();
-		int samples = updateDMABuffers(packets, count, 0);
-		submitDMABuffers(samples);
-		idleTimer = 0;
-		break;
+	// Audio commands needs heavy data processing so put it away in ring buffer and let main
+	// loop handle it. Don't use cycles in an interrupt routine.
 
-	case AUDIO_CMD_IDLE:
-	case AUDIO_CMD_PLAY: // update current buffer
-		if (count == 0 && idleTimer >= IDLE_TIMEOUT_MS && !fIdleDisabled) {
-			idleTimer = IDLE_TIMEOUT_MS;
-			updateDMABuffersIdle(sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
-		} else {
-			updateDMABuffers(packets, count, sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
-			if (count)
-				idleTimer = 0;
-		}
+	struct AudioCommand *acmd = &audioCommands[cmdWriteIdx % 2];
+	cmdWriteIdx++;
 
-		break;
+	acmd->count = count;
+	acmd->sync = sync;
+	acmd->cmd = cmd;
+	if(packets) memcpy(acmd->packets, packets, sizeof(uint8_t*)*count);
 
-	case AUDIO_CMD_STOP:
-		break;
-	}
-	return (USBD_OK);
-  /* USER CODE END 2 */
+  	return (USBD_OK);
 }
 
 /**
@@ -588,6 +626,11 @@ void HalfTransfer_CallBack_FS(void)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+
+// Only channel1 callbacks are used as both DAC channels are run with the same
+// speed and buffer size.
+// The interrupt for ch2 may come little bit before or after but it does not matter.
+
 void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 {
   /* Prevent unused argument(s) compilation warning */

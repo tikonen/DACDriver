@@ -22,6 +22,7 @@
 #include "main.h"
 #include "usb_device.h"
 #include "usbd_conf.h"
+#include "usbd_audio_if.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -147,11 +148,8 @@ int main(void)
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
   while (1)
   {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
+	  Process_Audio_Command();
   }
-  /* USER CODE END 3 */
 }
 
 /**
