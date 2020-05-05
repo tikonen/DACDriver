@@ -212,6 +212,8 @@ void  USBD_AUDIO_Sync (USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType);
   * @}
   */
 
+void initDMA(int idleDisabled);
+
 #ifdef __cplusplus
 }
 #endif

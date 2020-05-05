@@ -608,6 +608,7 @@ void USBD_AUDIO_Sync(USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType)
 	haudio = (USBD_AUDIO_HandleTypeDef*) pdev->pClassData;
 
 	if (haudio->state != AUDIO_STATE_PLAY) {
+		// play nothing
 		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(NULL, 0,
 				AUDIO_CMD_IDLE, syncType);
 	} else {
@@ -664,19 +665,18 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
 
   if (epnum == AUDIO_OUT_EP)
   {
-    /* Increment the Buffer pointer or roll it back when all buffers are full */
-
     haudio->write_idx++;
 
     if(haudio->state == AUDIO_STATE_NONE) {
     	// Playback has not started yet
-    	if(haudio->write_idx - haudio->read_idx >= AUDIO_PACKET_BATCH) {
-    		uint8_t* packets[AUDIO_PACKET_BATCH];
-    		for(int i=0; i < AUDIO_PACKET_BATCH; haudio->read_idx++,i++ ) {
+    	const int initialBatchSize = AUDIO_PACKET_BATCH * 2;
+    	if(haudio->write_idx - haudio->read_idx >= initialBatchSize) {
+    		uint8_t* packets[initialBatchSize];
+    		for(int i=0; i < initialBatchSize; haudio->read_idx++,i++ ) {
     			packets[i] = haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
     		}
     		((USBD_AUDIO_ItfTypeDef *)pdev->pUserData)->AudioCmd(packets,
-    				AUDIO_PACKET_BATCH,
+    				initialBatchSize,
     		        AUDIO_CMD_START,
 					AUDIO_SYNC_HALF);
 

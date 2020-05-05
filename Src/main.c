@@ -134,8 +134,10 @@ int main(void)
   HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 2047U);
   HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2047U);
 
-  extern void initDMA();
-  initDMA();
+  int idleDisabled = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+
+  //extern void initDMA(int idleDisabled);
+  initDMA(idleDisabled);
   // https://elastic-notes.blogspot.com/p/blog-page_1.html
   // Start test signal
   //HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)cosWave12bit, sizeof(cosWave12bit) / sizeof(uint16_t), DAC_ALIGN_12B_R);
@@ -284,12 +286,11 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
-
 }
 
 /**
@@ -313,6 +314,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  /* PA0 -> User switch */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
 /* USER CODE END 4 */
