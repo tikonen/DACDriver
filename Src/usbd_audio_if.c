@@ -150,8 +150,9 @@ int idleTimer = 0;
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
 int fIdleDisabled = 0;
 
-static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
-static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2];
+#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2)
+static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * 2 * AUDIO_SAMPLES_PER_CHANNEL];
+static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * 2 * AUDIO_SAMPLES_PER_CHANNEL];
 
 /*
 #include <stdio.h>
@@ -366,20 +367,25 @@ int thetaCos = (USBD_AUDIO_FREQ / 50) / 4; // 90 degrees phase delay. cos(t) = s
 // fills buffer with sine-wave when there is nothing coming from USB
 void updateDMABuffersIdle(int halve)
 {
-	const int samples = sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2;
+	const int samples = ARRAYSIZE(dmaLeftBuffer) / 2;
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
 	dstl += halve ? samples : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
 	dstr += halve ? samples : 0;
 
-	for (int i = 0; i < samples; i++)
+	for (int i = 0; i < samples; i += 2)
 	{
+		// Interpolate samples to twice the frequency
 		dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
 		dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
+		int oldThetaSin = thetaSin;
+		int oldThetaCos = thetaCos;
 		thetaSin++;
 		thetaCos++;
-		thetaSin %= sizeof(dmaIdleSinWaveBuffer) / 2;
-		thetaCos %= sizeof(dmaIdleSinWaveBuffer) / 2;
+		thetaSin %= ARRAYSIZE(dmaIdleSinWaveBuffer);
+		thetaCos %= ARRAYSIZE(dmaIdleSinWaveBuffer);
+		dstl[i+1] = (dmaIdleSinWaveBuffer[thetaSin] - dmaIdleSinWaveBuffer[oldThetaSin])/2 + dmaIdleSinWaveBuffer[oldThetaSin];
+		dstr[i+1] = (dmaIdleSinWaveBuffer[thetaCos] - dmaIdleSinWaveBuffer[oldThetaCos])/2 + dmaIdleSinWaveBuffer[oldThetaCos];
 	}
 }
 #endif
@@ -390,35 +396,55 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 
 	const int samplesPerPacket = AUDIO_OUT_PACKET / 2 / 2;
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
-	dstl += halve ? sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2 : 0;
+	dstl += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
-	dstr += halve ? sizeof(dmaLeftBuffer) / sizeof(uint16_t) / 2 : 0;
+	dstr += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 
 	for (int i = 0; i < count; i++)
 	{
 		const uint16_t *packet = (uint16_t*) (packets[i]);
-		for (int i = 0; i < samplesPerPacket; i++)
+		for (int i = 0; i < samplesPerPacket * 2; i += 4)
 		{
-			dstl[i] = _16BTO12B(packet[i * 2]);
-			dstr[i] = _16BTO12B(packet[i * 2 + 1]);
+#if 0
+			dstl[i] = dstl[i+1] = _16BTO12B(packet[i]);
+			dstr[i] = dstr[i+1] = _16BTO12B(packet[i + 1]);
+			dstl[i+3] = dstl[i+2] = _16BTO12B(packet[i + 2]);
+			dstr[i+3] = dstr[i+2] = _16BTO12B(packet[i + 3]);
+#else
+
+			// Interpolate, this is lazy and assumes that we're rendering more or less vectors, nothing smooth
+			dstl[i] = _16BTO12B(packet[i]);
+			dstr[i] = _16BTO12B(packet[i + 1]);
+			dstl[i+3] = _16BTO12B(packet[i + 2]);
+			dstr[i+3] = _16BTO12B(packet[i + 3]);
+
+			const int16_t deltal = (dstl[i+3] - dstl[i])/3;
+			const int16_t deltar = (dstr[i+3] - dstr[i])/3;
+
+			dstl[i+1] = deltal + dstl[i];
+			dstr[i+1] = deltar + dstr[i];
+
+			dstl[i+2] = dstl[i+3] - deltal;
+			dstr[i+2] = dstr[i+3] - deltar;
+#endif
 		}
-		dstl += samplesPerPacket;
-		dstr += samplesPerPacket;
+		dstl += samplesPerPacket * 2;
+		dstr += samplesPerPacket * 2;
 	}
 	// zero out rest of the samples if there is not enough packets in the batch
 	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
 	{
-		for (int j = 0; j < samplesPerPacket; j++)
+		for (int j = 0; j < samplesPerPacket * 2; j++)
 		{
 			dstl[j] = dstr[j] = ZERO_LEVEL;
 		}
-		dstl += samplesPerPacket;
-		dstr += samplesPerPacket;
+		dstl += samplesPerPacket * 2;
+		dstr += samplesPerPacket * 2;
 	}
 	if (count <= AUDIO_PACKET_BATCH)
-		return AUDIO_PACKET_BATCH * samplesPerPacket;
+		return AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 	else
-		return AUDIO_PACKET_BATCH * 2 * samplesPerPacket;
+		return AUDIO_PACKET_BATCH * 2 * samplesPerPacket * 2;
 
 #undef _16BTO12B
 }

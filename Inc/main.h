@@ -32,7 +32,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#define ARRAYSIZE(a) (sizeof(a)/sizeof(a[0]))
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
