@@ -390,9 +390,10 @@ void updateDMABuffersIdle(int halve)
 }
 #endif
 
+// This function can process a batch or double batch
 int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 {
-#define _16BTO12B(s) ((((int32_t)s + 32767) >> 4) & 0x0FFF)
+#define _16BTO12B(s) ((((int32_t)(s) + 32767) >> 4) & 0x0FFF)
 
 	const int samplesPerPacket = AUDIO_OUT_PACKET / 2 / 2;
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
@@ -400,51 +401,47 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
 	dstr += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 
+	static int16_t prevl = 0;
+	static int16_t prevr = 0;
+
 	for (int i = 0; i < count; i++)
 	{
-		const uint16_t *packet = (uint16_t*) (packets[i]);
-		for (int i = 0; i < samplesPerPacket * 2; i += 4)
+		const int16_t *packet = (int16_t*) (packets[i]);
+		for (int i = 0; i < samplesPerPacket * 2; i += 2)
 		{
 #if 0
 			dstl[i] = dstl[i+1] = _16BTO12B(packet[i]);
 			dstr[i] = dstr[i+1] = _16BTO12B(packet[i + 1]);
-			dstl[i+3] = dstl[i+2] = _16BTO12B(packet[i + 2]);
-			dstr[i+3] = dstr[i+2] = _16BTO12B(packet[i + 3]);
 #else
-
-			// Interpolate, this is lazy and assumes that we're rendering more or less vectors, nothing smooth
-			dstl[i] = _16BTO12B(packet[i]);
-			dstr[i] = _16BTO12B(packet[i + 1]);
-			dstl[i+3] = _16BTO12B(packet[i + 2]);
-			dstr[i+3] = _16BTO12B(packet[i + 3]);
-
-			const int16_t deltal = (dstl[i+3] - dstl[i])/3;
-			const int16_t deltar = (dstr[i+3] - dstr[i])/3;
-
-			dstl[i+1] = deltal + dstl[i];
-			dstr[i+1] = deltar + dstr[i];
-
-			dstl[i+2] = dstl[i+3] - deltal;
-			dstr[i+2] = dstr[i+3] - deltar;
+			// Interpolate samples
+			dstl[i] = _16BTO12B(prevl);
+			dstr[i] = _16BTO12B(prevr);
+			dstl[i+1] = _16BTO12B((packet[i] - prevl)/2 + prevl);
+			dstr[i+1] = _16BTO12B((packet[i+1] - prevr)/2 + prevr);
+			prevl = packet[i];
+			prevr = packet[i+1];
 #endif
 		}
 		dstl += samplesPerPacket * 2;
 		dstr += samplesPerPacket * 2;
 	}
-	// zero out rest of the samples if there is not enough packets in the batch
+	// zero out rest of the samples in DMA buffer if there is not enough packets in the batch
+	if(count > AUDIO_PACKET_BATCH) count -= AUDIO_PACKET_BATCH;
 	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
 	{
-		for (int j = 0; j < samplesPerPacket * 2; j++)
+		for (int j = 0; j < samplesPerPacket * 2 / 2; j++)
 		{
-			dstl[j] = dstr[j] = ZERO_LEVEL;
+			((uint32_t*)dstl)[j] = ((uint32_t*)dstr)[j] = ZERO_LEVEL | (ZERO_LEVEL << 16);
 		}
 		dstl += samplesPerPacket * 2;
 		dstr += samplesPerPacket * 2;
+		prevl = 0;
+		prevr = 0;
 	}
 	if (count <= AUDIO_PACKET_BATCH)
 		return AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 	else
-		return AUDIO_PACKET_BATCH * 2 * samplesPerPacket * 2;
+		return 2 * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 
 #undef _16BTO12B
 }
