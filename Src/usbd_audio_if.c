@@ -362,7 +362,7 @@ void updateDMABuffersIdle(int halve)
 
 #else
 int thetaSin = 0;
-int thetaCos = (USBD_AUDIO_FREQ / 50) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
+int thetaCos = ARRAYSIZE(dmaIdleSinWaveBuffer) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
 
 // fills buffer with sine-wave when there is nothing coming from USB
 void updateDMABuffersIdle(int halve)
@@ -376,16 +376,14 @@ void updateDMABuffersIdle(int halve)
 	for (int i = 0; i < samples; i += 2)
 	{
 		// Interpolate samples to twice the frequency
-		dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
-		dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
-		int oldThetaSin = thetaSin;
-		int oldThetaCos = thetaCos;
+		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
+		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
 		thetaSin++;
 		thetaCos++;
-		thetaSin %= ARRAYSIZE(dmaIdleSinWaveBuffer);
-		thetaCos %= ARRAYSIZE(dmaIdleSinWaveBuffer);
-		dstl[i+1] = (dmaIdleSinWaveBuffer[thetaSin] - dmaIdleSinWaveBuffer[oldThetaSin])/2 + dmaIdleSinWaveBuffer[oldThetaSin];
-		dstr[i+1] = (dmaIdleSinWaveBuffer[thetaCos] - dmaIdleSinWaveBuffer[oldThetaCos])/2 + dmaIdleSinWaveBuffer[oldThetaCos];
+		if(thetaSin == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaSin = 0;
+		if(thetaCos == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaCos = 0;
+		dstl[i+1] = (dmaIdleSinWaveBuffer[thetaSin] - sv)/2 + sv;
+		dstr[i+1] = (dmaIdleSinWaveBuffer[thetaCos] - cv)/2 + cv;
 	}
 }
 #endif
@@ -528,7 +526,7 @@ void Process_Audio_Command()
 		stopDMA();
 		int samples = updateDMABuffers(cmd->packets, cmd->count,
 				0);
-		submitDMABuffers(samples);
+		submitDMABuffers(2 * samples);
 		idleTimer = 0;
 		break;
 
