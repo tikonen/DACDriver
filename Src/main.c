@@ -256,7 +256,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = APB1_CLOCK / USBD_AUDIO_FREQ / 2;
+  htim6.Init.Period = APB1_CLOCK / USBD_AUDIO_FREQ / INTERPOLATION_MUL;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {

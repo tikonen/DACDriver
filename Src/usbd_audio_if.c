@@ -150,38 +150,10 @@ int idleTimer = 0;
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
 int fIdleDisabled = 0;
 
-#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / 2 / 2)
-static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * 2 * AUDIO_SAMPLES_PER_CHANNEL];
-static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * 2 * AUDIO_SAMPLES_PER_CHANNEL];
-
-/*
-#include <stdio.h>
-#include <stdint.h>
-#include <math.h>
-
-#define ZERO_LEVEL 2047U
-
-void foo()
-{
-    const int USBD_AUDIO_FREQ = 48000;
-    const unsigned int samples = (USBD_AUDIO_FREQ / 50);
-    const float stepf = 2 * M_PI / samples;
-    float theta = 0;
-    printf("SIN = {");
-    for (unsigned int i = 0; i < samples; i++) {
-        printf("%u,", (uint16_t)(sinf(theta) * ZERO_LEVEL + ZERO_LEVEL));
-        theta += stepf;
-    }
-    printf("};\n");
-    printf("\nCOS = {\n");
-    theta = 0;
-    for (unsigned int i = 0; i < samples; i++) {
-        printf("%u,", (uint16_t)(cosf(theta) * ZERO_LEVEL + ZERO_LEVEL));
-        theta += stepf;
-    }
-    printf("};\n");
-}
-*/
+#define AUDIO_CHANNELS 2
+#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
+static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
+static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
 
 // Sin wave
 static const uint16_t __attribute__((aligned(4))) dmaIdleSinWaveBuffer[(USBD_AUDIO_FREQ
@@ -373,17 +345,18 @@ void updateDMABuffersIdle(int halve)
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
 	dstr += halve ? samples : 0;
 
-	for (int i = 0; i < samples; i += 2)
+	for (int i = 0; i < samples; i += INTERPOLATION_MUL)
 	{
-		// Interpolate samples to twice the frequency
 		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
 		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
 		thetaSin++;
 		thetaCos++;
 		if(thetaSin == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaSin = 0;
 		if(thetaCos == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaCos = 0;
-		dstl[i+1] = (dmaIdleSinWaveBuffer[thetaSin] - sv)/2 + sv;
-		dstr[i+1] = (dmaIdleSinWaveBuffer[thetaCos] - cv)/2 + cv;
+		for(int j=1; j < INTERPOLATION_MUL; j++) {
+			dstl[i+j] = j*(dmaIdleSinWaveBuffer[thetaSin] - sv)/INTERPOLATION_MUL + sv;
+			dstr[i+j] = j*(dmaIdleSinWaveBuffer[thetaCos] - cv)/INTERPOLATION_MUL + cv;
+		}
 	}
 }
 #endif
@@ -393,7 +366,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 {
 #define _16BTO12B(s) ((((int32_t)(s) + 32767) >> 4) & 0x0FFF)
 
-	const int samplesPerPacket = AUDIO_OUT_PACKET / 2 / 2;
+	const int samplesPerPacket = AUDIO_OUT_PACKET / sizeof(uint16_t) / AUDIO_CHANNELS;
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
 	dstl += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
@@ -402,44 +375,42 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	static int16_t prevl = 0;
 	static int16_t prevr = 0;
 
-	for (int i = 0; i < count; i++)
+	for (int p = 0; p < count; p++)
 	{
-		const int16_t *packet = (int16_t*) (packets[i]);
-		for (int i = 0; i < samplesPerPacket * 2; i += 2)
+		const int16_t *packet = (int16_t*) (packets[p]);
+		for (int i = 0,j = 0; i < samplesPerPacket * 2; i += 2, j += INTERPOLATION_MUL)
 		{
-#if 0
-			dstl[i] = dstl[i+1] = _16BTO12B(packet[i]);
-			dstr[i] = dstr[i+1] = _16BTO12B(packet[i + 1]);
-#else
-			// Interpolate samples
-			dstl[i] = _16BTO12B(prevl);
-			dstr[i] = _16BTO12B(prevr);
-			dstl[i+1] = _16BTO12B((packet[i] - prevl)/2 + prevl);
-			dstr[i+1] = _16BTO12B((packet[i+1] - prevr)/2 + prevr);
+			// Linear interpolate data to dma buffer
+			dstl[j] = _16BTO12B(prevl);
+			dstr[j] = _16BTO12B(prevr);
+			for(int k=1; k < INTERPOLATION_MUL; k++) {
+				dstl[j+k] = _16BTO12B(k * (packet[i] - prevl)/INTERPOLATION_MUL + prevl);
+				dstr[j+k] = _16BTO12B(k * (packet[i+1] - prevr)/INTERPOLATION_MUL + prevr);
+			}
 			prevl = packet[i];
 			prevr = packet[i+1];
-#endif
 		}
-		dstl += samplesPerPacket * 2;
-		dstr += samplesPerPacket * 2;
+
+		dstl += samplesPerPacket * INTERPOLATION_MUL;
+		dstr += samplesPerPacket * INTERPOLATION_MUL;
 	}
 	// zero out rest of the samples in DMA buffer if there is not enough packets in the batch
 	if(count > AUDIO_PACKET_BATCH) count -= AUDIO_PACKET_BATCH;
 	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
 	{
-		for (int j = 0; j < samplesPerPacket * 2 / 2; j++)
-		{
-			((uint32_t*)dstl)[j] = ((uint32_t*)dstr)[j] = ZERO_LEVEL | (ZERO_LEVEL << 16);
+		for(int j=0; j < samplesPerPacket * INTERPOLATION_MUL; j++) {
+			dstl[j] = dstr[j] = ZERO_LEVEL;
 		}
-		dstl += samplesPerPacket * 2;
-		dstr += samplesPerPacket * 2;
+
+		dstl += samplesPerPacket * INTERPOLATION_MUL;
+		dstr += samplesPerPacket * INTERPOLATION_MUL;
 		prevl = 0;
 		prevr = 0;
 	}
 	if (count <= AUDIO_PACKET_BATCH)
-		return AUDIO_PACKET_BATCH * samplesPerPacket * 2;
+		return INTERPOLATION_MUL * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 	else
-		return 2 * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
+		return INTERPOLATION_MUL * 2 * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 
 #undef _16BTO12B
 }
@@ -526,7 +497,7 @@ void Process_Audio_Command()
 		stopDMA();
 		int samples = updateDMABuffers(cmd->packets, cmd->count,
 				0);
-		submitDMABuffers(2 * samples);
+		submitDMABuffers(samples);
 		idleTimer = 0;
 		break;
 
