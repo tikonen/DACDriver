@@ -146,7 +146,7 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
 
 #define IDLE_TIMEOUT_MS 1000
 int idleTimer = 0;
-#define ZERO_LEVEL 2047U
+#define ZERO_LEVEL 2047U // 0x7FF
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
 int fIdleDisabled = 0;
 
@@ -399,7 +399,8 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
 	{
 		for(int j=0; j < samplesPerPacket * INTERPOLATION_MUL; j++) {
-			dstl[j] = dstr[j] = ZERO_LEVEL;
+			dstl[j] = ZERO_LEVEL;
+			dstr[j] = ZERO_LEVEL;
 		}
 
 		dstl += samplesPerPacket * INTERPOLATION_MUL;
@@ -506,12 +507,16 @@ void Process_Audio_Command()
 		if (cmd->count == 0 && idleTimer >= IDLE_TIMEOUT_MS
 				&& !fIdleDisabled)
 		{
+			HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, GPIO_PIN_RESET);
 			idleTimer = IDLE_TIMEOUT_MS;
 			updateDMABuffersIdle(
 					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
 		}
 		else
 		{
+			HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, GPIO_PIN_SET);
 			updateDMABuffers(cmd->packets, cmd->count,
 					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
 			if (cmd->count)
@@ -628,7 +633,7 @@ void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
   /* Prevent unused argument(s) compilation warning */
   UNUSED(hdac);
 
-  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // Debug
+  HAL_GPIO_TogglePin(LED_PORT, ORANGE_LED_PIN); // Debug
   idleTimer += MS_PER_BATCH;
 
   HalfTransfer_CallBack_FS();
@@ -639,7 +644,7 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 	/* Prevent unused argument(s) compilation warning */
 	UNUSED(hdac);
 
-	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // Debug
+	HAL_GPIO_TogglePin(LED_PORT, ORANGE_LED_PIN); // Debug
 	idleTimer += MS_PER_BATCH;
 
 	TransferComplete_CallBack_FS();

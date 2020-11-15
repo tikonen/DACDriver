@@ -47,7 +47,11 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#define LED_PORT GPIOD
+#define GREEN_LED_PIN GPIO_PIN_12
+#define RED_LED_PIN GPIO_PIN_14
+#define BLUE_LED_PIN GPIO_PIN_15
+#define ORANGE_LED_PIN GPIO_PIN_13
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
