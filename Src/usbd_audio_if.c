@@ -478,7 +478,7 @@ struct AudioCommand
 	uint32_t count;
 	uint8_t sync;
 	uint8_t cmd;
-} audioCommands[2];
+} audioCommands[2] __attribute__((section(".ccmram")));
 uint8_t cmdReadIdx = 0;
 uint8_t cmdWriteIdx = 0;
 
