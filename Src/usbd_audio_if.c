@@ -375,7 +375,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	static int16_t prevl = 0;
 	static int16_t prevr = 0;
 
-	for (int p = 0; p < count; p++)
+	for (unsigned int p = 0; p < count; p++)
 	{
 		const int16_t *packet = (int16_t*) (packets[p]);
 		for (int i = 0,j = 0; i < samplesPerPacket * 2; i += 2, j += INTERPOLATION_MUL)
