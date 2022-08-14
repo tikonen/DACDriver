@@ -410,53 +410,44 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
             prev = *sample;
         }
 
-		/*
-		for (int i = 0; i < samplesPerPacket; i++)
-		{
-		    const AudioSample *sample = &packet[i];
-			// Linear interpolate data to dma buffer
-			dstl[dstidx] = _16BTO12B(prev.l);
-			dstr[dstidx] = _16BTO12B(prev.r);
-			for(int k=1; k < INTERPOLATION_MUL; k++) {
-				dstl[dstidx+k] = _16BTO12B(k * (sample->l - prev.l)/INTERPOLATION_MUL + prev.l);
-				dstr[dstidx+k] = _16BTO12B(k * (sample->r - prev.r)/INTERPOLATION_MUL + prev.r);
-			}
-			dstidx += INTERPOLATION_MUL;
-			prev = *sample;
-		}
-		*/
-
-		//dstl += samplesPerPacket * INTERPOLATION_MUL;
-		//dstr += samplesPerPacket * INTERPOLATION_MUL;
 	}
 
 	// zero out rest of the samples in DMA buffer if there is not enough packets in the batch
 	if(count > AUDIO_PACKET_BATCH) count -= AUDIO_PACKET_BATCH;
+	const int zeroidle = 0;
     unsigned int total = samplesPerPacket * INTERPOLATION_MUL * AUDIO_PACKET_BATCH;
     if(dstidx < total) {
-        while(dstidx < total) {
-            dstl[dstidx] = ZERO_LEVEL;
-            dstr[dstidx] = ZERO_LEVEL;
-            dstidx++;
+        if(zeroidle) {
+            while(dstidx < total) {
+                dstl[dstidx] = ZERO_LEVEL;
+                dstr[dstidx] = ZERO_LEVEL;
+                dstidx++;
+            }
+        } else {
+            static unsigned int step = 0;
+            static uint16_t steps[8][2] = {
+                    {0, 0xFFF},
+                    {0xFFF/2, 0xFFF},
+                    {0xFFF, 0xFFF},
+                    {0xFFF, 0xFFF/2},
+                    {0xFFF, 0},
+                    {0xFFF/2, 0},
+                    {0,0},
+                    {0, 0xFFF/2}
+            };
+
+            while(dstidx < total) {
+                dstl[dstidx] = steps[step % 8][0];
+                dstr[dstidx] = steps[step % 8][1];
+                step++;
+                dstidx++;
+            }
         }
+
         prev.l = 0;
         prev.r = 0;
     }
 
-	/*
-	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
-	{
-		for(int j=0; j < samplesPerPacket * INTERPOLATION_MUL; j++) {
-			dstl[j] = ZERO_LEVEL;
-			dstr[j] = ZERO_LEVEL;
-		}
-
-		dstl += samplesPerPacket * INTERPOLATION_MUL;
-		dstr += samplesPerPacket * INTERPOLATION_MUL;
-		prev.l = 0;
-		prev.r = 0;
-	}
-	*/
 	if (count <= AUDIO_PACKET_BATCH)
 		return INTERPOLATION_MUL * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 	else
