@@ -361,6 +361,11 @@ void updateDMABuffersIdle(int halve)
 }
 #endif
 
+typedef struct {
+    int16_t l; // left channel
+    int16_t r; // right channel
+} AudioSample;
+
 // This function can process a batch or double batch
 int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 {
@@ -372,30 +377,73 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
 	dstr += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 
-	static int16_t prevl = 0;
-	static int16_t prevr = 0;
-
+	static AudioSample prev = { .l = 0, .r = 0 };
+	unsigned int dstidx = 0;
+	int syncPoint = 0;
 	for (unsigned int p = 0; p < count; p++)
 	{
-		const int16_t *packet = (int16_t*) (packets[p]);
-		for (int i = 0,j = 0; i < samplesPerPacket * 2; i += 2, j += INTERPOLATION_MUL)
-		{
-			// Linear interpolate data to dma buffer
-			dstl[j] = _16BTO12B(prevl);
-			dstr[j] = _16BTO12B(prevr);
-			for(int k=1; k < INTERPOLATION_MUL; k++) {
-				dstl[j+k] = _16BTO12B(k * (packet[i] - prevl)/INTERPOLATION_MUL + prevl);
-				dstr[j+k] = _16BTO12B(k * (packet[i+1] - prevr)/INTERPOLATION_MUL + prevr);
-			}
-			prevl = packet[i];
-			prevr = packet[i+1];
-		}
+		const AudioSample *packet = (AudioSample*) (packets[p]);
 
-		dstl += samplesPerPacket * INTERPOLATION_MUL;
-		dstr += samplesPerPacket * INTERPOLATION_MUL;
+		for(int i = 0; i < samplesPerPacket; i++) {
+           const AudioSample *sample = &packet[i];
+           // if point is very close to 0 then treat it as a sync point signal
+           if(abs(sample->l) <= 1 && abs(sample->r) <= 1) {
+               syncPoint = 1;
+               continue;
+           }
+            if(!syncPoint) {
+                // sample has low bit on, interpolate line from the previous point.
+                for(int k=1; k < INTERPOLATION_MUL; k++) {
+                    dstl[dstidx+k-1] = _16BTO12B(k * (sample->l - prev.l)/INTERPOLATION_MUL + prev.l);
+                    dstr[dstidx+k-1] = _16BTO12B(k * (sample->r - prev.r)/INTERPOLATION_MUL + prev.r);
+                }
+                dstl[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->l);
+                dstr[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->r);
+                dstidx += INTERPOLATION_MUL;
+            } else {
+                // sample starts a new path, skip interpolation
+                dstl[dstidx] = _16BTO12B(sample->l);
+                dstr[dstidx] = _16BTO12B(sample->r);
+                dstidx++;
+                syncPoint = 0;
+            }
+            prev = *sample;
+        }
+
+		/*
+		for (int i = 0; i < samplesPerPacket; i++)
+		{
+		    const AudioSample *sample = &packet[i];
+			// Linear interpolate data to dma buffer
+			dstl[dstidx] = _16BTO12B(prev.l);
+			dstr[dstidx] = _16BTO12B(prev.r);
+			for(int k=1; k < INTERPOLATION_MUL; k++) {
+				dstl[dstidx+k] = _16BTO12B(k * (sample->l - prev.l)/INTERPOLATION_MUL + prev.l);
+				dstr[dstidx+k] = _16BTO12B(k * (sample->r - prev.r)/INTERPOLATION_MUL + prev.r);
+			}
+			dstidx += INTERPOLATION_MUL;
+			prev = *sample;
+		}
+		*/
+
+		//dstl += samplesPerPacket * INTERPOLATION_MUL;
+		//dstr += samplesPerPacket * INTERPOLATION_MUL;
 	}
+
 	// zero out rest of the samples in DMA buffer if there is not enough packets in the batch
 	if(count > AUDIO_PACKET_BATCH) count -= AUDIO_PACKET_BATCH;
+    unsigned int total = samplesPerPacket * INTERPOLATION_MUL * AUDIO_PACKET_BATCH;
+    if(dstidx < total) {
+        while(dstidx < total) {
+            dstl[dstidx] = ZERO_LEVEL;
+            dstr[dstidx] = ZERO_LEVEL;
+            dstidx++;
+        }
+        prev.l = 0;
+        prev.r = 0;
+    }
+
+	/*
 	for (int i = count; i < AUDIO_PACKET_BATCH; i++)
 	{
 		for(int j=0; j < samplesPerPacket * INTERPOLATION_MUL; j++) {
@@ -405,9 +453,10 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 
 		dstl += samplesPerPacket * INTERPOLATION_MUL;
 		dstr += samplesPerPacket * INTERPOLATION_MUL;
-		prevl = 0;
-		prevr = 0;
+		prev.l = 0;
+		prev.r = 0;
 	}
+	*/
 	if (count <= AUDIO_PACKET_BATCH)
 		return INTERPOLATION_MUL * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
 	else

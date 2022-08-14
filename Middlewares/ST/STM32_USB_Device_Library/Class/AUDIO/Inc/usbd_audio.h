@@ -158,10 +158,10 @@ typedef struct
 {
   uint32_t                  alt_setting;
   uint8_t                   packets[AUDIO_OUT_PACKET_NUM][AUDIO_OUT_PACKET];
-  AUDIO_StateTypeDef       state;
+  AUDIO_StateTypeDef        state;
   //uint8_t                   rd_enable;
-  uint8_t                  read_idx;
-  uint8_t                  write_idx;
+  uint32_t                  read_idx;
+  uint32_t                  write_idx;
   USBD_AUDIO_ControlTypeDef control;
 }
 USBD_AUDIO_HandleTypeDef;
