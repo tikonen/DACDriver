@@ -375,6 +375,30 @@ typedef struct {
     int16_t r; // right channel
 } AudioSample;
 
+// Generates steps to draw a box following edges
+void buildFrameSteps(uint16_t steps[][2], int count) {
+
+    const int min = 0;
+    const int max = (1 << 12) - 1; // max 12bit
+    int s = 0;
+    const int step = (max - min)/(count / 4);
+    for(int i=0 ; i < count / 4; i++, s++) {
+        steps[s][0] = min;
+        steps[s][1] = step * i + min;
+        steps[s+count/2][0] = max;
+        steps[s+count/2][1] = max - step * i + min;
+    }
+    for(int i=0 ; i < count / 4; i++, s++) {
+        steps[s][0] = step * i + min;
+        steps[s][1] = max;
+        steps[s+count/2][0] = max - step * i + min;
+        steps[s+count/2][1] = min;
+    }
+}
+
+#define FRAMESTEPCOUNT 64
+uint16_t frameSteps[FRAMESTEPCOUNT][2];
+
 // This function can process a batch or double batch
 int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 {
@@ -434,20 +458,10 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
             }
         } else {
             static unsigned int step = 0;
-            static uint16_t steps[8][2] = {
-                    {0, 0xFFF},
-                    {0xFFF/2, 0xFFF},
-                    {0xFFF, 0xFFF},
-                    {0xFFF, 0xFFF/2},
-                    {0xFFF, 0},
-                    {0xFFF/2, 0},
-                    {0,0},
-                    {0, 0xFFF/2}
-            };
 
             while(dstidx < total) {
-                dstl[dstidx] = steps[step % 8][0];
-                dstr[dstidx] = steps[step % 8][1];
+                dstl[dstidx] = frameSteps[step % FRAMESTEPCOUNT][0];
+                dstr[dstidx] = frameSteps[step % FRAMESTEPCOUNT][1];
                 step++;
                 dstidx++;
             }
@@ -483,6 +497,8 @@ void submitDMABuffers(int samples)
 
 void initDMA(int idleDisabled)
 {
+    buildFrameSteps(frameSteps, FRAMESTEPCOUNT);
+
 	fIdleDisabled = idleDisabled;
 	const uint32_t n = sizeof(dmaLeftBuffer) / sizeof(uint16_t);
 
