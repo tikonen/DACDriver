@@ -335,6 +335,8 @@ void updateDMABuffersIdle(int halve)
 #else
 int thetaSin = 0;
 int thetaCos = ARRAYSIZE(dmaIdleSinWaveBuffer) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
+int skipAmount = 25;
+int skipRotation = 0;
 
 // fills buffer with sine-wave when there is nothing coming from USB
 void updateDMABuffersIdle(int halve)
@@ -347,6 +349,11 @@ void updateDMABuffersIdle(int halve)
 
 	for (int i = 0; i < samples; i += INTERPOLATION_MUL)
 	{
+	    if((thetaSin + skipRotation) % skipAmount == 0) {
+	        thetaSin = (thetaSin + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
+	        thetaCos = (thetaCos + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
+	    }
+
 		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
 		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
 		thetaSin++;
@@ -358,6 +365,8 @@ void updateDMABuffersIdle(int halve)
 			dstr[i+j] = j*(dmaIdleSinWaveBuffer[thetaCos] - cv)/INTERPOLATION_MUL + cv;
 		}
 	}
+	skipRotation++;
+	if(skipRotation >= skipAmount) skipRotation = 0;
 }
 #endif
 

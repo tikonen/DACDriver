@@ -615,7 +615,7 @@ void USBD_AUDIO_Sync(USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType)
 
 		int n = 0;
 		uint8_t *packets[AUDIO_PACKET_BATCH] = { 0 };
-		while (haudio->read_idx != haudio->write_idx && n < AUDIO_PACKET_BATCH) {
+		while (haudio->read_idx < haudio->write_idx && n < AUDIO_PACKET_BATCH) {
 			packets[n] =
 					haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
 			haudio->read_idx++;
