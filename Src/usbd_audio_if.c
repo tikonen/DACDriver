@@ -146,7 +146,7 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
 
 #define IDLE_TIMEOUT_MS 1000
 int idleTimer = 0;
-#define ZERO_LEVEL 2047U // 0x7FF
+#define ZERO_LEVEL (2047U << 4) // 0x7FF
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
 int fIdleDisabled = 0;
 
@@ -349,20 +349,24 @@ void updateDMABuffersIdle(int halve)
 
 	for (int i = 0; i < samples; i += INTERPOLATION_MUL)
 	{
+#if 1  // chain animation
 	    if((thetaSin + skipRotation) % skipAmount == 0) {
 	        thetaSin = (thetaSin + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
 	        thetaCos = (thetaCos + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
 	    }
+#endif
 
-		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin];
-		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos];
+		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin] << 4;
+		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos] << 4;
 		thetaSin++;
 		thetaCos++;
 		if(thetaSin == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaSin = 0;
 		if(thetaCos == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaCos = 0;
+		int16_t ld = (dmaIdleSinWaveBuffer[thetaSin] << 4) - sv;
+		int16_t rd = (dmaIdleSinWaveBuffer[thetaCos] << 4) - cv;
 		for(int j=1; j < INTERPOLATION_MUL; j++) {
-			dstl[i+j] = j*(dmaIdleSinWaveBuffer[thetaSin] - sv)/INTERPOLATION_MUL + sv;
-			dstr[i+j] = j*(dmaIdleSinWaveBuffer[thetaCos] - cv)/INTERPOLATION_MUL + cv;
+			dstl[i+j] = (j*ld)/INTERPOLATION_MUL + sv;
+			dstr[i+j] = (j*rd)/INTERPOLATION_MUL + cv;
 		}
 	}
 	skipRotation++;
@@ -379,7 +383,7 @@ typedef struct {
 void buildFrameSteps(uint16_t steps[][2], int count) {
 
     const int min = 0;
-    const int max = (1 << 12) - 1; // max 12bit
+    const int max = (1 << 16) - 1; // max 16bit
     int s = 0;
     const int step = (max - min)/(count / 4);
     for(int i=0 ; i < count / 4; i++, s++) {
@@ -402,9 +406,12 @@ uint16_t frameSteps[FRAMESTEPCOUNT][2];
 // This function can process a batch or double batch
 int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 {
-#define _16BTO12B(s) ((((int32_t)(s) + 32767) >> 4) & 0x0FFF)
+//#define _16BTO12B(s) ((((int32_t)(s) + 32767) >> 4) & 0x0FFF)
+#define _16BTO12B(s) ((s) + 32767)
 
 	const int samplesPerPacket = AUDIO_OUT_PACKET / sizeof(uint16_t) / AUDIO_CHANNELS;
+	//static_assert(samplesPerPacket % INTERPOLATION_MUL == 0);
+
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
 	dstl += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
@@ -412,7 +419,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 
 	static AudioSample prev = { .l = 0, .r = 0 };
 	unsigned int dstidx = 0;
-	int syncPoint = 0;
+	static int syncPoint = 0;
 	for (unsigned int p = 0; p < count; p++)
 	{
 		const AudioSample *packet = (AudioSample*) (packets[p]);
@@ -422,22 +429,31 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
            // if point is very close to 0 then treat it as a sync point signal
            if(abs(sample->l) <= 1 && abs(sample->r) <= 1) {
                syncPoint = 1;
+               for(int k=0; k < INTERPOLATION_MUL; k++) {
+                   dstl[dstidx + k] = _16BTO12B(prev.l);
+                   dstr[dstidx + k] = _16BTO12B(prev.r);
+               }
+               dstidx += INTERPOLATION_MUL;
                continue;
            }
             if(!syncPoint) {
                 // sample has low bit on, interpolate line from the previous point.
+            	const int16_t ld = (sample->l - prev.l);
+            	const int16_t rd = (sample->r - prev.r);
                 for(int k=1; k < INTERPOLATION_MUL; k++) {
-                    dstl[dstidx+k-1] = _16BTO12B(k * (sample->l - prev.l)/INTERPOLATION_MUL + prev.l);
-                    dstr[dstidx+k-1] = _16BTO12B(k * (sample->r - prev.r)/INTERPOLATION_MUL + prev.r);
+                    dstl[dstidx+k-1] = _16BTO12B((k * ld)/INTERPOLATION_MUL + prev.l);
+                    dstr[dstidx+k-1] = _16BTO12B((k * rd)/INTERPOLATION_MUL + prev.r);
                 }
                 dstl[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->l);
                 dstr[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->r);
                 dstidx += INTERPOLATION_MUL;
             } else {
                 // sample starts a new path, skip interpolation
-                dstl[dstidx] = _16BTO12B(sample->l);
-                dstr[dstidx] = _16BTO12B(sample->r);
-                dstidx++;
+                for (int k = 0; k < INTERPOLATION_MUL; k++) {
+                    dstl[dstidx + k] = _16BTO12B(sample->l);
+                    dstr[dstidx + k] = _16BTO12B(sample->r);
+                }
+                dstidx += INTERPOLATION_MUL;
                 syncPoint = 0;
             }
             prev = *sample;
@@ -491,8 +507,8 @@ void submitDMABuffers(int samples)
 {
 	extern DAC_HandleTypeDef hdac;
 	stopDMA();
-	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_R);
-	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_R);
+	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_L);
+	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_L);
 }
 
 void initDMA(int idleDisabled)
@@ -544,8 +560,8 @@ struct AudioCommand
 	uint8_t sync;
 	uint8_t cmd;
 } audioCommands[2] __attribute__((section(".ccmram")));
-uint8_t cmdReadIdx = 0;
-uint8_t cmdWriteIdx = 0;
+uint32_t cmdReadIdx = 0;
+uint32_t cmdWriteIdx = 0;
 
 // Called from main loop, interrupt may happen at any time.
 void Process_Audio_Command()

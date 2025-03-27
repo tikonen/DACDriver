@@ -59,8 +59,8 @@ $ mkdir build
 $ cmake-gui -S . -B build
 ```
 
-# Build with System Workbench for STM32
+# Build with STM32CubeIDe 1.18.0
 
-The latest version of the IDE can be downloaded from http://www.ac6-tools.com/downloads/SW4STM32/install_sw4stm32_win_64bits-latest.exe .
+The latest version of the IDE can be downloaded from https://www.st.com/en/development-tools/stm32cubeide.html
 
-Minimum version of Workbench that should be used for compiling is v4.6.3
+

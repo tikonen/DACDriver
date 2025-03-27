@@ -63,7 +63,8 @@ void Error_Handler(void);
 
 /* Private defines -----------------------------------------------------------*/
 /* USER CODE BEGIN Private defines */
-#define INTERPOLATION_MUL 4
+// DAC sample rate is  USBD_AUDIO_FREQ * multiplier
+#define INTERPOLATION_MUL 16
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
