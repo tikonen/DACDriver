@@ -400,6 +400,8 @@ void buildFrameSteps(uint16_t steps[][2], int count) {
     }
 }
 
+#define DISABLE_INTERPOLATE 0
+
 #define FRAMESTEPCOUNT 64
 uint16_t frameSteps[FRAMESTEPCOUNT][2];
 
@@ -426,6 +428,13 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 
 		for(int i = 0; i < samplesPerPacket; i++) {
            const AudioSample *sample = &packet[i];
+#if DISABLE_INTERPOLATE
+           for (int k = 0; k < INTERPOLATION_MUL; k++) {
+                dstl[dstidx + k] = _16BTO12B(sample->l);
+                dstr[dstidx + k] = _16BTO12B(sample->r);
+           }
+           dstidx += INTERPOLATION_MUL;
+#else
            // if point is very close to 0 then treat it as a sync point signal
            if(abs(sample->l) <= 1 && abs(sample->r) <= 1) {
                syncPoint = 1;
@@ -457,6 +466,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
                 syncPoint = 0;
             }
             prev = *sample;
+#endif
         }
 
 	}
@@ -553,13 +563,15 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
   /* USER CODE END 1 */
 }
 
+#define CMD_QUEUE_LEN 4
+
 struct AudioCommand
 {
 	uint8_t *packets[AUDIO_PACKET_BATCH*2];
 	uint32_t count;
 	uint8_t sync;
 	uint8_t cmd;
-} audioCommands[2] __attribute__((section(".ccmram")));
+} audioCommands[CMD_QUEUE_LEN] __attribute__((section(".ccmram")));
 uint32_t cmdReadIdx = 0;
 uint32_t cmdWriteIdx = 0;
 
@@ -568,7 +580,7 @@ void Process_Audio_Command()
 {
 	if(cmdWriteIdx - cmdReadIdx == 0) return;
 
-	struct AudioCommand *cmd = &audioCommands[cmdReadIdx % 2];
+	struct AudioCommand *cmd = &audioCommands[cmdReadIdx % CMD_QUEUE_LEN];
 	cmdReadIdx++;
 
 	switch (cmd->cmd)
@@ -623,13 +635,14 @@ static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd, 
 	// Audio commands needs heavy data processing so put it away in ring buffer and let main
 	// loop handle it. Don't use cycles in an interrupt routine.
 
-	struct AudioCommand *acmd = &audioCommands[cmdWriteIdx % 2];
-	cmdWriteIdx++;
+	struct AudioCommand *acmd = &audioCommands[cmdWriteIdx % CMD_QUEUE_LEN];
 
 	acmd->count = count;
 	acmd->sync = sync;
 	acmd->cmd = cmd;
 	if(packets) memcpy(acmd->packets, packets, sizeof(uint8_t*)*count);
+
+	cmdWriteIdx++;
 
   	return (USBD_OK);
 }

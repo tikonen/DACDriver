@@ -95,14 +95,12 @@
   */
 #define AUDIO_SAMPLE_FREQ(frq)      (uint8_t)(frq), (uint8_t)((frq >> 8)), (uint8_t)((frq >> 16))
 
-#define AUDIO_PACKET_SZE(frq)          (uint8_t)(((frq * 2U * 2U)/1000U) & 0xFFU), \
-                                       (uint8_t)((((frq * 2U * 2U)/1000U) >> 8) & 0xFFU)
+#define AUDIO_PACKET_SZE(frq)          (uint8_t)((AUDIO_OUT_PACKET) & 0xFFU), \
+                                       (uint8_t)(((AUDIO_OUT_PACKET) >> 8) & 0xFFU)
 
 /**
   * @}
   */
-
-
 
 
 /** @defgroup USBD_AUDIO_Private_FunctionPrototypes
@@ -683,6 +681,14 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
     		haudio->state = AUDIO_STATE_PLAY;
     	}
     }
+
+#if 0
+    uint32_t len = HAL_PCD_EP_GetRxCount(pdev->pData, AUDIO_OUT_EP);
+    if(len != AUDIO_OUT_PACKET) {
+    	// Received packet size was not expected.
+    	while(1) {};
+    }
+#endif
 
     /* Prepare Out endpoint to receive next audio packet */
     USBD_LL_PrepareReceive(pdev, AUDIO_OUT_EP, haudio->packets[haudio->write_idx % AUDIO_OUT_PACKET_NUM],
