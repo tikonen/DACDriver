@@ -64,7 +64,7 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 /* USER CODE BEGIN Private defines */
 // DAC sample rate is  USBD_AUDIO_FREQ * multiplier
-#define INTERPOLATION_MUL 1  // number must divide 875 (= 164000000 / 2 / 48000)
+#define INTERPOLATION_MUL 14  // number must divide 875 (= 164000000 / 2 / 48000)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

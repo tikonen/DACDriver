@@ -335,7 +335,7 @@ void updateDMABuffersIdle(int halve)
 #else
 int thetaSin = 0;
 int thetaCos = ARRAYSIZE(dmaIdleSinWaveBuffer) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
-int skipAmount = 25;
+int skipAmount = 4;
 int skipRotation = 0;
 
 // fills buffer with sine-wave when there is nothing coming from USB
