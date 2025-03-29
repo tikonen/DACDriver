@@ -67,7 +67,7 @@
 /** @addtogroup STM32_USB_DEVICE_LIBRARY
   * @{
   */
-
+extern TIM_HandleTypeDef htim6;
 
 /** @defgroup USBD_AUDIO
   * @brief usbd core module
@@ -613,7 +613,7 @@ void USBD_AUDIO_Sync(USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType)
 
 		int n = 0;
 		uint8_t *packets[AUDIO_PACKET_BATCH] = { 0 };
-		while (haudio->read_idx < haudio->write_idx && n < AUDIO_PACKET_BATCH) {
+		while (haudio->write_idx - haudio->read_idx != 0  && n < AUDIO_PACKET_BATCH) {
 			packets[n] =
 					haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
 			haudio->read_idx++;
@@ -663,7 +663,17 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
 
   if (epnum == AUDIO_OUT_EP)
   {
+
+	// Slow down DMA by resetting the trigger counter every so often. This prevents DMA half/complete
+	// interrupt logic to trigger bit later when we can be sure that all needed packets are there.
+	if(haudio->write_idx % 16 == 0)
+		__HAL_TIM_SET_COUNTER(&htim6, 0);
+
     haudio->write_idx++;
+
+    /* Prepare Out endpoint to receive next audio packet */
+    USBD_LL_PrepareReceive(pdev, AUDIO_OUT_EP, haudio->packets[haudio->write_idx % AUDIO_OUT_PACKET_NUM],
+                           AUDIO_OUT_PACKET);
 
     if(haudio->state == AUDIO_STATE_NONE) {
     	// Playback has not started yet
@@ -690,9 +700,6 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
     }
 #endif
 
-    /* Prepare Out endpoint to receive next audio packet */
-    USBD_LL_PrepareReceive(pdev, AUDIO_OUT_EP, haudio->packets[haudio->write_idx % AUDIO_OUT_PACKET_NUM],
-                           AUDIO_OUT_PACKET);
   }
 
   return USBD_OK;

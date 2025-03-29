@@ -32,7 +32,7 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+extern TIM_HandleTypeDef htim6;
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -419,6 +419,8 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
 	dstr += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
 
+	//int glitch = 0;
+
 	static AudioSample prev = { .l = 0, .r = 0 };
 	unsigned int dstidx = 0;
 	static int syncPoint = 0;
@@ -428,7 +430,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 
 		for(int i = 0; i < samplesPerPacket; i++) {
            const AudioSample *sample = &packet[i];
-#if DISABLE_INTERPOLATE
+#if DISABLE_INTERPOLATE || (INTERPOLATION_MUL == 1)
            for (int k = 0; k < INTERPOLATION_MUL; k++) {
                 dstl[dstidx + k] = _16BTO12B(sample->l);
                 dstr[dstidx + k] = _16BTO12B(sample->r);
@@ -465,6 +467,13 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
                 dstidx += INTERPOLATION_MUL;
                 syncPoint = 0;
             }
+
+            /*
+            if(abs(sample->l - prev.l) > 200 || abs(sample->r - prev.r) > 200) {
+            	glitch++;
+            }
+            */
+
             prev = *sample;
 #endif
         }
@@ -517,6 +526,7 @@ void submitDMABuffers(int samples)
 {
 	extern DAC_HandleTypeDef hdac;
 	stopDMA();
+	__HAL_TIM_SET_COUNTER(&htim6, 0);
 	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_L);
 	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_L);
 }
@@ -589,33 +599,29 @@ void Process_Audio_Command()
 		//NOTE we assume that start provides 2 * AUDIO_PACKET_BATCH of packets, otherwise
 		// the dma half/full interrupt update logic won't work.
 		stopDMA();
-		int samples = updateDMABuffers(cmd->packets, cmd->count,
-				0);
+		int samples = updateDMABuffers(cmd->packets, cmd->count, 0);
 		submitDMABuffers(samples);
 		idleTimer = 0;
 		break;
 
 	case AUDIO_CMD_IDLE:
 	case AUDIO_CMD_PLAY: // update current buffer
-		if (cmd->count == 0 && idleTimer >= IDLE_TIMEOUT_MS
-				&& !fIdleDisabled)
+
+		if (cmd->count == 0 && idleTimer >= IDLE_TIMEOUT_MS	&& !fIdleDisabled)
 		{
 			HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, GPIO_PIN_SET);
 			HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, GPIO_PIN_RESET);
 			idleTimer = IDLE_TIMEOUT_MS;
-			updateDMABuffersIdle(
-					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+			updateDMABuffersIdle(cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
 		}
 		else
 		{
 			HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, GPIO_PIN_RESET);
 			HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, GPIO_PIN_SET);
-			updateDMABuffers(cmd->packets, cmd->count,
-					cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
+			updateDMABuffers(cmd->packets, cmd->count, cmd->sync == AUDIO_SYNC_COMPLETE ? 1 : 0);
 			if (cmd->count)
 				idleTimer = 0;
 		}
-
 		break;
 
 	case AUDIO_CMD_STOP:
@@ -643,6 +649,8 @@ static int8_t AUDIO_AudioCmd_FS(uint8_t** packets, uint32_t count, uint8_t cmd, 
 	if(packets) memcpy(acmd->packets, packets, sizeof(uint8_t*)*count);
 
 	cmdWriteIdx++;
+
+	//Process_Audio_Command();
 
   	return (USBD_OK);
 }

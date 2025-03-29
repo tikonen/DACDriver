@@ -57,10 +57,11 @@ USBD_HandleTypeDef hUsbDeviceFS;
 /* USER CODE BEGIN 1 */
 
 /* USER CODE BEGIN 4 */
+static char malloc_buffer[sizeof(USBD_AUDIO_HandleTypeDef)] __attribute__((section(".ccmram")));
 void* _usb_dummy_malloc(size_t size)
 {
-	static char buffer[sizeof(USBD_AUDIO_HandleTypeDef)];
-	return buffer;
+	//static char buffer[sizeof(USBD_AUDIO_HandleTypeDef)];
+	return malloc_buffer;
 }
 
 void _usb_dummy_free(void *p)
