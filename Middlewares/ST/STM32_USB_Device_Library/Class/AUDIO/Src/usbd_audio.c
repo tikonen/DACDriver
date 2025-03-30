@@ -664,8 +664,9 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
   if (epnum == AUDIO_OUT_EP)
   {
 
-	// Slow down DMA by resetting the trigger counter every so often. This prevents DMA half/complete
-	// interrupt logic to trigger bit later when we can be sure that all needed packets are there.
+	// Slow down DMA by resetting the trigger counter every so often. This allows DMA half/complete
+	// interrupt logic to trigger a bit later when we can be sure that all the needed packets have
+	// been received to update the half of the DMA buffer.
 	if(haudio->write_idx % 8 == 0)
 		__HAL_TIM_SET_COUNTER(&htim6, 0);
 

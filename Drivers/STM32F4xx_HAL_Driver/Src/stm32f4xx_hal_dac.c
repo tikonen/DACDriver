@@ -626,6 +626,63 @@ HAL_StatusTypeDef HAL_DAC_Start_DMA(DAC_HandleTypeDef* hdac, uint32_t Channel, u
   return HAL_OK;
 }
 
+HAL_StatusTypeDef HAL_DAC_Start_Dual_DMA(DAC_HandleTypeDef* hdac, uint32_t* pData, uint32_t Length, uint32_t Alignment)
+{
+  uint32_t tmpreg = 0U;
+
+  /* Check the parameters */
+  assert_param(IS_DAC_CHANNEL(Channel));
+  //assert_param(IS_DAC_ALIGN(Alignment));
+
+  /* Process locked */
+  __HAL_LOCK(hdac);
+
+  /* Change DAC state */
+  hdac->State = HAL_DAC_STATE_BUSY;
+
+
+  /* Set the DMA transfer complete callback for channel1 */
+  hdac->DMA_Handle1->XferCpltCallback = DAC_DMAConvCpltCh1;
+
+  /* Set the DMA half transfer complete callback for channel1 */
+  hdac->DMA_Handle1->XferHalfCpltCallback = DAC_DMAHalfConvCpltCh1;
+
+  /* Set the DMA error callback for channel1 */
+  hdac->DMA_Handle1->XferErrorCallback = DAC_DMAErrorCh1;
+
+  /* Enable the selected DAC channel1 DMA request */
+  hdac->Instance->CR |= DAC_CR_DMAEN1;
+
+  /* Case of use of channel 1 */
+  switch(Alignment)
+  {
+      case DAC_ALIGN_12B_LD:
+       	tmpreg = (uint32_t)&hdac->Instance->DHR12LD;
+       	break;
+      case DAC_ALIGN_12B_RD:
+    	tmpreg = (uint32_t)&hdac->Instance->DHR12RD;
+    	break;
+      default:
+        break;
+  }
+
+  /* Enable the DAC DMA underrun interrupt */
+  __HAL_DAC_ENABLE_IT(hdac, DAC_IT_DMAUDR1);
+
+  /* Enable the DMA Stream */
+  HAL_DMA_Start_IT(hdac->DMA_Handle1, (uint32_t)pData, tmpreg, Length);
+
+  /* Enable the Peripherals */
+  __HAL_DAC_ENABLE(hdac, DAC_CHANNEL_1);
+  __HAL_DAC_ENABLE(hdac, DAC_CHANNEL_2);
+
+  /* Process Unlocked */
+  __HAL_UNLOCK(hdac);
+
+  /* Return function status */
+  return HAL_OK;
+}
+
 /**
   * @brief  Disables DAC and stop conversion of channel.
   * @param  hdac pointer to a DAC_HandleTypeDef structure that contains

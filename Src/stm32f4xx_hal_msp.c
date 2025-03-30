@@ -26,7 +26,7 @@
 /* USER CODE END Includes */
 extern DMA_HandleTypeDef hdma_dac1;
 
-extern DMA_HandleTypeDef hdma_dac2;
+//extern DMA_HandleTypeDef hdma_dac2;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
@@ -114,8 +114,8 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
     hdma_dac1.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_dac1.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_dac1.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_dac1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
-    hdma_dac1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_dac1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+    hdma_dac1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
     hdma_dac1.Init.Mode = DMA_CIRCULAR;
     hdma_dac1.Init.Priority = DMA_PRIORITY_MEDIUM;
     hdma_dac1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
@@ -126,7 +126,9 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
 
     __HAL_LINKDMA(hdac,DMA_Handle1,hdma_dac1);
 
+
     /* DAC2 Init */
+    /*
     hdma_dac2.Instance = DMA1_Stream6;
     hdma_dac2.Init.Channel = DMA_CHANNEL_7;
     hdma_dac2.Init.Direction = DMA_MEMORY_TO_PERIPH;
@@ -143,7 +145,7 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
     }
 
     __HAL_LINKDMA(hdac,DMA_Handle2,hdma_dac2);
-
+     */
     /* DAC interrupt Init */
     //HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 0);
     //HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);

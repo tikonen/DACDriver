@@ -195,8 +195,11 @@ typedef void (*pDAC_CallbackTypeDef)(DAC_HandleTypeDef *hdac);
   * @{
   */
 #define DAC_ALIGN_12B_R                    0x00000000U
+#define DAC_ALIGN_12B_RD                   0x00000001U
+#define DAC_ALIGN_12B_LD                   0x00000002U
 #define DAC_ALIGN_12B_L                    0x00000004U
 #define DAC_ALIGN_8B_R                     0x00000008U
+
 /**
   * @}
   */
@@ -330,6 +333,7 @@ void HAL_DAC_MspDeInit(DAC_HandleTypeDef* hdac);
 HAL_StatusTypeDef HAL_DAC_Start(DAC_HandleTypeDef* hdac, uint32_t Channel);
 HAL_StatusTypeDef HAL_DAC_Stop(DAC_HandleTypeDef* hdac, uint32_t Channel);
 HAL_StatusTypeDef HAL_DAC_Start_DMA(DAC_HandleTypeDef* hdac, uint32_t Channel, uint32_t* pData, uint32_t Length, uint32_t Alignment);
+HAL_StatusTypeDef HAL_DAC_Start_Dual_DMA(DAC_HandleTypeDef* hdac, uint32_t* pData, uint32_t Length, uint32_t Alignment);
 HAL_StatusTypeDef HAL_DAC_Stop_DMA(DAC_HandleTypeDef* hdac, uint32_t Channel);
 uint32_t HAL_DAC_GetValue(DAC_HandleTypeDef* hdac, uint32_t Channel);
 /**

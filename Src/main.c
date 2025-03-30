@@ -47,7 +47,7 @@
 /* Private variables ---------------------------------------------------------*/
 DAC_HandleTypeDef hdac;
 DMA_HandleTypeDef hdma_dac1;
-DMA_HandleTypeDef hdma_dac2;
+//DMA_HandleTypeDef hdma_dac2;
 
 TIM_HandleTypeDef htim6;
 
@@ -110,8 +110,9 @@ int main(void)
   HAL_DAC_Start(&hdac,DAC_CHANNEL_2);
 
   // Zero level
-  HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 2047U);
-  HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2047U);
+  HAL_DACEx_DualSetValue(&hdac, DAC_ALIGN_12B_R, 2047U, 2047U);
+  //HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 2047U);
+  //HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2047U);
 
   int idleDisabled = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
 
@@ -262,8 +263,8 @@ static void MX_DMA_Init(void)
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 1);
-  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  //HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 1);
+  //HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 }
 
 /**

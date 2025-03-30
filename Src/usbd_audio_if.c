@@ -152,8 +152,13 @@ int fIdleDisabled = 0;
 
 #define AUDIO_CHANNELS 2
 #define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
-static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
-static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
+#define DMA_SAMPLE_COUNT (INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL)
+// Interleaved dma buffer
+static uint16_t __attribute__((aligned(4))) dmaBuffer[sizeof(uint16_t) /* sample size */ * 2 /* channels */ * DMA_SAMPLE_COUNT];
+static uint16_t *dmaLeftBuffer = dmaBuffer; // pointer to left channel samples
+static uint16_t *dmaRightBuffer = &dmaBuffer[1]; // pointer to right channel samples
+//static uint16_t __attribute__((aligned(4))) dmaLeftBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
+//static uint16_t __attribute__((aligned(4))) dmaRightBuffer[2 * INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL];
 
 // Sin wave
 static const uint16_t __attribute__((aligned(4))) dmaIdleSinWaveBuffer[(USBD_AUDIO_FREQ
@@ -341,11 +346,11 @@ int skipRotation = 0;
 // fills buffer with sine-wave when there is nothing coming from USB
 void updateDMABuffersIdle(int halve)
 {
-	const int samples = ARRAYSIZE(dmaLeftBuffer) / 2;
+	const int samples = DMA_SAMPLE_COUNT;
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
-	dstl += halve ? samples : 0;
+	dstl += halve ? 2*samples : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
-	dstr += halve ? samples : 0;
+	dstr += halve ? 2*samples : 0;
 
 	for (int i = 0; i < samples; i += INTERPOLATION_MUL)
 	{
@@ -356,8 +361,8 @@ void updateDMABuffersIdle(int halve)
 	    }
 #endif
 
-		uint16_t sv = dstl[i] = dmaIdleSinWaveBuffer[thetaSin] << 4;
-		uint16_t cv = dstr[i] = dmaIdleSinWaveBuffer[thetaCos] << 4;
+		uint16_t sv = dstl[2*i] = dmaIdleSinWaveBuffer[thetaSin] << 4;
+		uint16_t cv = dstr[2*i] = dmaIdleSinWaveBuffer[thetaCos] << 4;
 		thetaSin++;
 		thetaCos++;
 		if(thetaSin == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaSin = 0;
@@ -365,8 +370,8 @@ void updateDMABuffersIdle(int halve)
 		int16_t ld = (dmaIdleSinWaveBuffer[thetaSin] << 4) - sv;
 		int16_t rd = (dmaIdleSinWaveBuffer[thetaCos] << 4) - cv;
 		for(int j=1; j < INTERPOLATION_MUL; j++) {
-			dstl[i+j] = (j*ld)/INTERPOLATION_MUL + sv;
-			dstr[i+j] = (j*rd)/INTERPOLATION_MUL + cv;
+			dstl[2*(i+j)] = (j*ld)/INTERPOLATION_MUL + sv;
+			dstr[2*(i+j)] = (j*rd)/INTERPOLATION_MUL + cv;
 		}
 	}
 	skipRotation++;
@@ -415,11 +420,9 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	//static_assert(samplesPerPacket % INTERPOLATION_MUL == 0);
 
 	uint16_t *dstl = (uint16_t*) dmaLeftBuffer;
-	dstl += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
+	dstl += halve ? DMA_SAMPLE_COUNT * 2 : 0;
 	uint16_t *dstr = (uint16_t*) dmaRightBuffer;
-	dstr += halve ? ARRAYSIZE(dmaLeftBuffer) / 2 : 0;
-
-	//int glitch = 0;
+	dstr += halve ? DMA_SAMPLE_COUNT * 2 : 0;
 
 	static AudioSample prev = { .l = 0, .r = 0 };
 	unsigned int dstidx = 0;
@@ -432,8 +435,8 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
            const AudioSample *sample = &packet[i];
 #if DISABLE_INTERPOLATE || (INTERPOLATION_MUL == 1)
            for (int k = 0; k < INTERPOLATION_MUL; k++) {
-                dstl[dstidx + k] = _16BTO12B(sample->l);
-                dstr[dstidx + k] = _16BTO12B(sample->r);
+                dstl[2*(dstidx + k)] = _16BTO12B(sample->l);
+                dstr[2*(dstidx + k)] = _16BTO12B(sample->r);
            }
            dstidx += INTERPOLATION_MUL;
 #else
@@ -441,8 +444,8 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
            if(abs(sample->l) <= 1 && abs(sample->r) <= 1) {
                syncPoint = 1;
                for(int k=0; k < INTERPOLATION_MUL; k++) {
-                   dstl[dstidx + k] = _16BTO12B(prev.l);
-                   dstr[dstidx + k] = _16BTO12B(prev.r);
+                   dstl[2*(dstidx + k)] = _16BTO12B(prev.l);
+                   dstr[2*(dstidx + k)] = _16BTO12B(prev.r);
                }
                dstidx += INTERPOLATION_MUL;
                continue;
@@ -452,27 +455,21 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
             	const int16_t ld = (sample->l - prev.l);
             	const int16_t rd = (sample->r - prev.r);
                 for(int k=1; k < INTERPOLATION_MUL; k++) {
-                    dstl[dstidx+k-1] = _16BTO12B((k * ld)/INTERPOLATION_MUL + prev.l);
-                    dstr[dstidx+k-1] = _16BTO12B((k * rd)/INTERPOLATION_MUL + prev.r);
+                    dstl[2*(dstidx+k-1)] = _16BTO12B((k * ld)/INTERPOLATION_MUL + prev.l);
+                    dstr[2*(dstidx+k-1)] = _16BTO12B((k * rd)/INTERPOLATION_MUL + prev.r);
                 }
-                dstl[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->l);
-                dstr[dstidx + INTERPOLATION_MUL - 1] = _16BTO12B(sample->r);
+                dstl[2*(dstidx + INTERPOLATION_MUL - 1)] = _16BTO12B(sample->l);
+                dstr[2*(dstidx + INTERPOLATION_MUL - 1)] = _16BTO12B(sample->r);
                 dstidx += INTERPOLATION_MUL;
             } else {
                 // sample starts a new path, skip interpolation
                 for (int k = 0; k < INTERPOLATION_MUL; k++) {
-                    dstl[dstidx + k] = _16BTO12B(sample->l);
-                    dstr[dstidx + k] = _16BTO12B(sample->r);
+                    dstl[2*(dstidx + k)] = _16BTO12B(sample->l);
+                    dstr[2*(dstidx + k)] = _16BTO12B(sample->r);
                 }
                 dstidx += INTERPOLATION_MUL;
                 syncPoint = 0;
             }
-
-            /*
-            if(abs(sample->l - prev.l) > 200 || abs(sample->r - prev.r) > 200) {
-            	glitch++;
-            }
-            */
 
             prev = *sample;
 #endif
@@ -487,16 +484,16 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
     if(dstidx < total) {
         if(zeroidle) {
             while(dstidx < total) {
-                dstl[dstidx] = ZERO_LEVEL;
-                dstr[dstidx] = ZERO_LEVEL;
+                dstl[2*dstidx] = ZERO_LEVEL;
+                dstr[2*dstidx] = ZERO_LEVEL;
                 dstidx++;
             }
         } else {
             static unsigned int step = 0;
 
             while(dstidx < total) {
-                dstl[dstidx] = frameSteps[step % FRAMESTEPCOUNT][0];
-                dstr[dstidx] = frameSteps[step % FRAMESTEPCOUNT][1];
+                dstl[2*dstidx] = frameSteps[step % FRAMESTEPCOUNT][0];
+                dstr[2*dstidx] = frameSteps[step % FRAMESTEPCOUNT][1];
                 step++;
                 dstidx++;
             }
@@ -527,8 +524,10 @@ void submitDMABuffers(int samples)
 	extern DAC_HandleTypeDef hdac;
 	stopDMA();
 	__HAL_TIM_SET_COUNTER(&htim6, 0);
-	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_L);
-	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_L);
+	//HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaBuffer, samples, DAC_ALIGN_12B_LD);
+	HAL_DAC_Start_Dual_DMA(&hdac, (uint32_t*)dmaBuffer, samples, DAC_ALIGN_12B_LD);
+	//HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaLeftBuffer, samples, DAC_ALIGN_12B_L);
+	//HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_L);
 }
 
 void initDMA(int idleDisabled)
@@ -536,12 +535,12 @@ void initDMA(int idleDisabled)
     buildFrameSteps(frameSteps, FRAMESTEPCOUNT);
 
 	fIdleDisabled = idleDisabled;
-	const uint32_t n = sizeof(dmaLeftBuffer) / sizeof(uint16_t);
+	const uint32_t n = DMA_SAMPLE_COUNT * 2;
 
 	for (uint32_t i = 0; i < n; i++)
 	{
-		dmaLeftBuffer[i] = ZERO_LEVEL;
-		dmaRightBuffer[i] = ZERO_LEVEL;
+		dmaLeftBuffer[2*i] = ZERO_LEVEL;
+		dmaRightBuffer[2*i] = ZERO_LEVEL;
 	}
 	submitDMABuffers(n);
 }
@@ -727,8 +726,7 @@ void HalfTransfer_CallBack_FS(void)
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 // Only channel1 callbacks are used as both DAC channels are run with the same
-// speed and buffer size.
-// The interrupt for ch2 may come little bit before or after but it does not matter.
+// DMA transfer.
 
 void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 {
