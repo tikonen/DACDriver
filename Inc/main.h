@@ -32,6 +32,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "serial.h"
 #define ARRAYSIZE(a) (sizeof(a)/sizeof(a[0]))
 /* USER CODE END Includes */
 
