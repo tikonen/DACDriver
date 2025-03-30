@@ -53,6 +53,10 @@ extern "C" {
 #define RED_LED_PIN GPIO_PIN_14
 #define BLUE_LED_PIN GPIO_PIN_15
 #define ORANGE_LED_PIN GPIO_PIN_13
+#define MEMS_CS_Pin GPIO_PIN_3
+#define MEMS_CS_GPIO_Port GPIOE
+#define AUDIO_RST_Pin GPIO_PIN_4
+#define AUDIO_RST_GPIO_Port GPIOD
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
