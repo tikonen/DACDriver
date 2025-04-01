@@ -307,7 +307,7 @@ void buildFrameSteps(uint16_t steps[][2], int count) {
 }
 
 #define DISABLE_INTERPOLATE 0
-
+#define SYNC_THRESHOLD 1
 #define FRAMESTEPCOUNT 64
 uint16_t frameSteps[FRAMESTEPCOUNT][2];
 
@@ -340,7 +340,7 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
            dstidx += INTERPOLATION_MUL;
 #else
            // if point is very close to 0 then treat it as a sync point signal
-           if(abs(sample->l) <= 1 && abs(sample->r) <= 1) {
+           if(abs(sample->l) <= SYNC_THRESHOLD && abs(sample->r) <= SYNC_THRESHOLD) {
                syncPoint = 1;
                for(int k=0; k < INTERPOLATION_MUL; k++) {
                    dst[dstidx + k].l = _NORMALIZE(prev.l);

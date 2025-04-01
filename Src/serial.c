@@ -1,7 +1,6 @@
 
 #include "main.h"
 #include "printf.h"
-#include <string.h>
 
 #define UART_RINGBUFFER_SIZE 512
 
@@ -21,18 +20,18 @@ static inline uint32_t rb_avail(const RingByteBuffer *buffer)
 
 extern UART_HandleTypeDef huart2;
 
-#define enter_CRITICAL()
-#define exit_CRITICAL()
+#define enter_CRITICAL() __disable_irq()
+#define exit_CRITICAL()  __enable_irq()
 
-static void uart_transmit_pending()
+static void uart_transmit_pending(UART_HandleTypeDef *huart)
 {
-	if(huart2.gState == HAL_UART_STATE_READY) {
+	if(huart->gState == HAL_UART_STATE_READY) {
 		uint32_t sidx = sUartBufferTX.ridx % UART_RINGBUFFER_SIZE;
 		uint32_t eidx = sUartBufferTX.widx % UART_RINGBUFFER_SIZE;
 		uint32_t len = eidx < sidx ? UART_RINGBUFFER_SIZE - sidx : eidx - sidx;
 		if(len) {
 			sUartBufferTX.ridx += len;
-			HAL_UART_Transmit_DMA(&huart2, sUartBufferTX.buffer + sidx, len);
+			HAL_UART_Transmit_DMA(huart, sUartBufferTX.buffer + sidx, len);
 			//HAL_UART_Transmit_IT(&huart2, sUartBufferTX.buffer + sidx, len);
 		}
 	}
@@ -51,22 +50,14 @@ void serial_printfln_ts(const char *format, ...)
 	const uint32_t sec = ts / 1000;
 	const uint32_t ms = ts - sec * 1000;
 
-#if 0
-	printf("[% 3u.%03u] ", sec, ms);
-	va_start(arglist, format);
-	vprintf(format, arglist);
-	va_end(arglist);
-	serial_putchar('\n');
-#else
 	enter_CRITICAL();
 	fctprintf(_putchar_unsafe, NULL, "[% 3u.%03u] ", sec, ms);
 	va_start(arglist, format);
 	vfctprintf(_putchar_unsafe, NULL, format, arglist);
 	va_end(arglist);
 	_putchar_unsafe('\n', NULL);
-	uart_transmit_pending();
+	uart_transmit_pending(&huart2);
 	exit_CRITICAL();
-#endif
 }
 
 // for printf
@@ -75,7 +66,7 @@ void _putchar(char c) {
 	// buffer is allocated in critical section to allow multiple threads to print to uart concurrently
 	enter_CRITICAL();
 	sUartBufferTX.buffer[sUartBufferTX.widx++ % UART_RINGBUFFER_SIZE] = c;
-	if(c == '\n') uart_transmit_pending();
+	if(c == '\n') uart_transmit_pending(&huart2);
 	exit_CRITICAL();
 }
 
@@ -84,7 +75,7 @@ void serial_writec(char c)
 	// buffer is allocated in critical section to allow multiple threads to print to uart concurrently
 	enter_CRITICAL();
 	sUartBufferTX.buffer[sUartBufferTX.widx++ % UART_RINGBUFFER_SIZE] = c;
-	uart_transmit_pending();
+	uart_transmit_pending(&huart2);
 	exit_CRITICAL();
 }
 
@@ -95,14 +86,14 @@ void serial_write(const char *str)
 	for(int i=0; str[i] ; i++) {
 		sUartBufferTX.buffer[sUartBufferTX.widx++ % UART_RINGBUFFER_SIZE] = str[i];
 	}
-	uart_transmit_pending();
+	uart_transmit_pending(&huart2);
 	exit_CRITICAL();
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if(rb_avail(&sUartBufferTX)) {
-		uart_transmit_pending();
+		uart_transmit_pending(huart);
 	}
 }
 
@@ -123,5 +114,5 @@ void start_receive()
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	HAL_UART_Receive_IT(&huart2, &sUartBufferRX.buffer[++sUartBufferRX.widx % UART_RINGBUFFER_SIZE], 1);
+	HAL_UART_Receive_IT(huart, &sUartBufferRX.buffer[++sUartBufferRX.widx % UART_RINGBUFFER_SIZE], 1);
 }
