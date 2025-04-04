@@ -32,6 +32,8 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 extern TIM_HandleTypeDef htim6;
+extern DAC_HandleTypeDef hdac;
+extern USBD_HandleTypeDef hUsbDeviceFS;
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -144,15 +146,14 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
 
 
 #define IDLE_TIMEOUT_MS 1000
-int idleTimer = 0;
-int isIdle = 0;
+static int idleTimer = 0;
 #define ZERO_LEVEL (2047U << 4) // 0x7FF
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
-int fIdleDisabled = 0;
+int isIdle = 0;
 
-#define AUDIO_CHANNELS 2
-#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
-#define DMA_SAMPLE_COUNT (INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL)
+//#define AUDIO_CHANNELS 2
+//#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
+//#define DMA_SAMPLE_COUNT (INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL)
 
 typedef struct
 {
@@ -377,7 +378,6 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
 	}
 
 	// zero out rest of the samples in DMA buffer if there is not enough packets in the batch
-	if(count > AUDIO_PACKET_BATCH) count -= AUDIO_PACKET_BATCH;
 	const int zeroidle = 0;
     unsigned int total = samplesPerPacket * INTERPOLATION_MUL * AUDIO_PACKET_BATCH;
     if(dstidx < total) {
@@ -402,25 +402,20 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
         prev.r = 0;
     }
 
-	if (count <= AUDIO_PACKET_BATCH)
-		return INTERPOLATION_MUL * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
-	else
-		return INTERPOLATION_MUL * 2 * AUDIO_PACKET_BATCH * samplesPerPacket * 2;
+	return INTERPOLATION_MUL * AUDIO_PACKET_BATCH * samplesPerPacket * count;
 
 #undef _NORMALIZE
 }
 
 void stopDMA()
 {
-	extern DAC_HandleTypeDef hdac;
 	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_1);
-	HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_2);
+	//HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_2);
 }
 
 
 void submitDMABuffers(int samples)
 {
-	extern DAC_HandleTypeDef hdac;
 	stopDMA();
 	__HAL_TIM_SET_COUNTER(&htim6, 0);
 	//HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dmaBuffer, samples, DAC_ALIGN_12B_LD);
@@ -429,11 +424,10 @@ void submitDMABuffers(int samples)
 	//HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t*)dmaRightBuffer, samples, DAC_ALIGN_12B_L);
 }
 
-void initDMA(int idleDisabled)
+void initDMA()
 {
     buildFrameSteps(frameSteps, FRAMESTEPCOUNT);
 
-	fIdleDisabled = idleDisabled;
 	const uint32_t n = DMA_SAMPLE_COUNT * 2;
 
 	for (uint32_t i = 0; i < n; i++)
@@ -496,6 +490,9 @@ void Process_Audio_Command()
 	case AUDIO_CMD_START: // start from scratch
 		LOG("START");
 
+		USBD_AUDIO_HandleTypeDef *haudio = (USBD_AUDIO_HandleTypeDef*) hUsbDeviceFS.pClassData;
+		haudio->state = AUDIO_STATE_PLAY;
+
 		//NOTE we assume that start provides 2 * AUDIO_PACKET_BATCH of packets, otherwise
 		// the dma half/full interrupt update logic won't work.
 		stopDMA();
@@ -508,14 +505,11 @@ void Process_Audio_Command()
 	case AUDIO_CMD_IDLE:
 	case AUDIO_CMD_PLAY: // update current buffer
 
-		if(!fIdleDisabled) {
-			if(idleTimer >= IDLE_TIMEOUT_MS && !isIdle && cmd->count == 0) {
-				isIdle = 1;
-				LOG("IDLE");
-			} else if(cmd->count != 0 && isIdle) {
-				isIdle = 0;
-				LOG("RESUME");
-			}
+		if(idleTimer >= IDLE_TIMEOUT_MS && !isIdle && cmd->count == 0) {
+			isIdle = 1;
+			USBD_AUDIO_HandleTypeDef *haudio = (USBD_AUDIO_HandleTypeDef*) hUsbDeviceFS.pClassData;
+			haudio->state = AUDIO_STATE_IDLE;
+			LOG("IDLE");
 		}
 
 		if (isIdle)
@@ -530,8 +524,7 @@ void Process_Audio_Command()
 			if (cmd->count)
 				idleTimer = 0;
 		}
-		HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, isIdle);
-		HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, !isIdle);
+		HAL_GPIO_WritePin(LED_PORT, BLUE_LED_PIN, !isIdle);
 		break;
 
 	case AUDIO_CMD_STOP:
@@ -638,7 +631,7 @@ void HalfTransfer_CallBack_FS(void)
 
 // Only channel1 callbacks are used as both DAC channels are run with the same
 // DMA transfer.
-
+int lastDMAState = -1;
 void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 {
   /* Prevent unused argument(s) compilation warning */
@@ -648,6 +641,7 @@ void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef* hdac)
   idleTimer += MS_PER_BATCH;
 
   HalfTransfer_CallBack_FS();
+  lastDMAState = 1;
 }
 
 void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
@@ -659,6 +653,7 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac)
 	idleTimer += MS_PER_BATCH;
 
 	TransferComplete_CallBack_FS();
+	lastDMAState = 0;
 }
 
 void HAL_DAC_DMAUnderrunCallbackCh1(DAC_HandleTypeDef *hdac)

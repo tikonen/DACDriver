@@ -68,6 +68,8 @@
   * @{
   */
 extern TIM_HandleTypeDef htim6;
+extern DMA_HandleTypeDef hdma_dac1;
+extern int lastDMAState;
 
 /** @defgroup USBD_AUDIO
   * @brief usbd core module
@@ -613,14 +615,14 @@ void USBD_AUDIO_Sync(USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType)
 
 		int n = 0;
 		uint8_t *packets[AUDIO_PACKET_BATCH] = { 0 };
+
 		while (haudio->write_idx - haudio->read_idx != 0  && n < AUDIO_PACKET_BATCH) {
-			packets[n] =
-					haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
+			packets[n] = haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
 			haudio->read_idx++;
 			n++;
 		}
-		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(packets, n,
-				AUDIO_CMD_PLAY, syncType);
+
+		((USBD_AUDIO_ItfTypeDef *) pdev->pUserData)->AudioCmd(packets, n, AUDIO_CMD_PLAY, syncType);
 	}
 }
 
@@ -663,20 +665,34 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
 
   if (epnum == AUDIO_OUT_EP)
   {
+	// DMA clock runs little bit faster than the PC clock. Slow down DMA by decreasing the timer trigger counter every so often.
+	// This allows DMA half/complete interrupt logic to trigger when the required data packets have been received to update
+	// half of the DMA buffer.
+	//
+	// Each adjustment is a small fraction of time as the DMA clock runs lot faster than the audio frequency due to interpolation
+	// between the samples.
+	int syncCorrection = 0;
+	if(haudio->write_idx % 2 == 0) {
+		int32_t pos = __HAL_DMA_GET_COUNTER(&hdma_dac1);
+		if( (lastDMAState == 0 && pos <= DMA_SAMPLE_COUNT / 2 + DMA_SAMPLE_COUNT) ||
+		    (lastDMAState == 1 && pos <= DMA_SAMPLE_COUNT / 2 ))
+		{
+			__HAL_TIM_SET_COUNTER(&htim6, __HAL_TIM_GET_COUNTER(&htim6) / 2);
+			syncCorrection = 1;
+		}
+	}
+	HAL_GPIO_WritePin(LED_PORT, RED_LED_PIN, syncCorrection);
 
-	// Slow down DMA by resetting the trigger counter every so often. This allows DMA half/complete
-	// interrupt logic to trigger a bit later when we can be sure that all the needed packets have
-	// been received to update the half of the DMA buffer.
-	if(haudio->write_idx % 8 == 0)
-		__HAL_TIM_SET_COUNTER(&htim6, 0);
-
+	//if(lastDMAState == 0) LOG("%d %u", lastDMAState, pos);
     haudio->write_idx++;
 
     /* Prepare Out endpoint to receive next audio packet */
     USBD_LL_PrepareReceive(pdev, AUDIO_OUT_EP, haudio->packets[haudio->write_idx % AUDIO_OUT_PACKET_NUM],
                            AUDIO_OUT_PACKET);
 
-    if(haudio->state == AUDIO_STATE_NONE) {
+
+
+    if(haudio->state == AUDIO_STATE_NONE || haudio->state == AUDIO_STATE_IDLE) {
     	// Playback has not started yet
     	const int initialBatchSize = AUDIO_PACKET_BATCH * 2;
     	if(haudio->write_idx - haudio->read_idx >= initialBatchSize) {

@@ -103,6 +103,10 @@
 
 #define AUDIO_PACKET_BATCH 1
 
+#define AUDIO_CHANNELS 2
+#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
+#define DMA_SAMPLE_COUNT (INTERPOLATION_MUL * AUDIO_SAMPLES_PER_CHANNEL)
+
     /* Audio Commands enumeration */
 typedef enum
 {
@@ -126,6 +130,7 @@ typedef enum
 {
   AUDIO_STATE_NONE = 0,
   AUDIO_STATE_PLAY,
+  AUDIO_STATE_IDLE
 }
 AUDIO_StateTypeDef;
 
@@ -212,7 +217,7 @@ void  USBD_AUDIO_Sync (USBD_HandleTypeDef *pdev, AUDIO_SyncTypeDef syncType);
   * @}
   */
 
-void initDMA(int idleDisabled);
+void initDMA();
 
 #ifdef __cplusplus
 }

@@ -117,7 +117,6 @@ void HalfTransfer_CallBack_FS(void);
 
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
 void Process_Audio_Command();
-void initDMA(int idleDisabled);
 /* USER CODE END EXPORTED_FUNCTIONS */
 
 /**

@@ -118,9 +118,7 @@ int main(void)
   //HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 2047U);
   //HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2047U);
 
-  int idleDisabled = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
-
-  initDMA(idleDisabled);
+  initDMA();
 
   LOG("=============================");
   LOG("DACDriver v1.0 " __DATE__);
