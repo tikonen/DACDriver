@@ -23,6 +23,7 @@
 #include "usbd_audio_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include <math.h>
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -164,9 +165,12 @@ typedef struct
 // Interleaved dma buffer
 static DMASample __attribute__((aligned(4))) dmaBuffer[2 /* circular double buffer */ * DMA_SAMPLE_COUNT];
 
+#define SIN_WAV_FREQ 100
+
+#if 0
 // Sin wave
-static const uint16_t __attribute__((aligned(4))) dmaIdleSinWaveBuffer[(USBD_AUDIO_FREQ
-		/ 50)] = { 32752, 32960, 33168, 33392, 33600, 33808, 34032, 34240, 34464, 34672, 34880, 35104,
+static const uint16_t sinWaveBuffer[USBD_AUDIO_FREQ / SIN_WAV_FREQ] = {
+				   32752, 32960, 33168, 33392, 33600, 33808, 34032, 34240, 34464, 34672, 34880, 35104,
 				   35312, 35520, 35744, 35952, 36160, 36384, 36592, 36800, 37024, 37232, 37440, 37648,
 				   37872, 38080, 38288, 38496, 38720, 38928, 39136, 39344, 39552, 39760, 39968, 40176,
 				   40384, 40592, 40800, 41008, 41216, 41424, 41632, 41840, 42048, 42256, 42464, 42656,
@@ -243,42 +247,54 @@ static const uint16_t __attribute__((aligned(4))) dmaIdleSinWaveBuffer[(USBD_AUD
 				   28464, 28688, 28896, 29104, 29328, 29536, 29744, 29968, 30176, 30384, 30608, 30816,
 				   31024, 31248, 31456, 31680, 31888, 32096, 32320, 32528 };
 
+#define buildIdleBuffer(...)
+#else
+static uint16_t sinWaveBuffer[USBD_AUDIO_FREQ / SIN_WAV_FREQ];
+
+void buildIdleBuffer(uint16_t *buf, int size)
+{
+	const float pi = 3.14159;
+	for(int i=0; i < size / 2; i++) {
+		buf[i] = (uint16_t)(sinf(2 * pi * i / size) * 32767 + 32767);
+	}
+
+	// second half-period is the first inverted
+	for(int i=size/2, j = 0; i < size; i++, j++) {
+		buf[i] = (2 * 32767) - buf[j];
+	}
+}
+#endif
 
 // fills buffer with sine-wave when there is nothing coming from USB
 void updateDMABuffersIdle(int halve)
 {
 	static int thetaSin = 0;
-	static int thetaCos = ARRAYSIZE(dmaIdleSinWaveBuffer) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
-	static int skipAmount = 4;
-	static int skipRotation = 0;
+	static int thetaCos = ARRAYSIZE(sinWaveBuffer) / 4; // 90 degrees phase delay. cos(t) = sin(t + pi/2)
 
 	DMASample *dst = dmaBuffer;
 	dst += halve ? DMA_SAMPLE_COUNT : 0;
 
+	static int lastl = 0;
+	static int lastr = 0;
+
 	for (int i = 0; i < DMA_SAMPLE_COUNT; i += INTERPOLATION_MUL)
 	{
-#if 1  // chain animation
-	    if((thetaSin + skipRotation) % skipAmount == 0) {
-	        thetaSin = (thetaSin + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
-	        thetaCos = (thetaCos + skipAmount / 2) % ARRAYSIZE(dmaIdleSinWaveBuffer);
-	    }
-#endif
+		dst[i].l = lastl;
+		dst[i].r = lastr;
+		int ld = sinWaveBuffer[thetaSin] - lastl;
+		int rd = sinWaveBuffer[thetaCos] - lastr;
+		for(int j=1; j < INTERPOLATION_MUL; j++) {
+			dst[i+j].l = (j*ld)/INTERPOLATION_MUL + lastl;
+			dst[i+j].r = (j*rd)/INTERPOLATION_MUL + lastr;
+		}
+		lastl = sinWaveBuffer[thetaSin];
+		lastr = sinWaveBuffer[thetaCos];
 
-		uint16_t sv = dst[i].l = dmaIdleSinWaveBuffer[thetaSin];
-		uint16_t cv = dst[i].r = dmaIdleSinWaveBuffer[thetaCos];
 		thetaSin++;
 		thetaCos++;
-		if(thetaSin == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaSin = 0;
-		if(thetaCos == ARRAYSIZE(dmaIdleSinWaveBuffer)) thetaCos = 0;
-		int16_t ld = dmaIdleSinWaveBuffer[thetaSin] - sv;
-		int16_t rd = dmaIdleSinWaveBuffer[thetaCos] - cv;
-		for(int j=1; j < INTERPOLATION_MUL; j++) {
-			dst[i+j].l = (j*ld)/INTERPOLATION_MUL + sv;
-			dst[i+j].r = (j*rd)/INTERPOLATION_MUL + cv;
-		}
+		if(thetaSin == ARRAYSIZE(sinWaveBuffer)) thetaSin = 0;
+		if(thetaCos == ARRAYSIZE(sinWaveBuffer)) thetaCos = 0;
 	}
-	skipRotation++;
-	if(skipRotation >= skipAmount) skipRotation = 0;
 }
 
 typedef struct {
@@ -352,8 +368,8 @@ int updateDMABuffers(uint8_t* packets[], uint32_t count, int halve)
            }
             if(!syncPoint) {
                 // sample has low bit on, interpolate line from the previous point.
-            	const int16_t ld = (sample->l - prev.l);
-            	const int16_t rd = (sample->r - prev.r);
+            	const int ld = (sample->l - prev.l);
+            	const int rd = (sample->r - prev.r);
                 for(int k=1; k < INTERPOLATION_MUL; k++) {
                     dst[dstidx+k-1].l = _NORMALIZE((k * ld)/INTERPOLATION_MUL + prev.l);
                     dst[dstidx+k-1].r = _NORMALIZE((k * rd)/INTERPOLATION_MUL + prev.r);
@@ -426,6 +442,8 @@ void submitDMABuffers(int samples)
 
 void initDMA()
 {
+	buildIdleBuffer(sinWaveBuffer, ARRAYSIZE(sinWaveBuffer));
+
     buildFrameSteps(frameSteps, FRAMESTEPCOUNT);
 
 	const uint32_t n = DMA_SAMPLE_COUNT * 2;
