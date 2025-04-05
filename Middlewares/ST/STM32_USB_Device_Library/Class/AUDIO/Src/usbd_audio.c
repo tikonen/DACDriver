@@ -695,10 +695,11 @@ static uint8_t  USBD_AUDIO_DataOut (USBD_HandleTypeDef *pdev,
     if(haudio->state == AUDIO_STATE_NONE || haudio->state == AUDIO_STATE_IDLE) {
     	// Playback has not started yet
     	const int initialBatchSize = AUDIO_PACKET_BATCH * 2;
-    	if(haudio->write_idx - haudio->read_idx >= initialBatchSize) {
+    	if(haudio->write_idx - haudio->read_idx > initialBatchSize) {
     		uint8_t* packets[initialBatchSize];
-    		for(int i=0; i < initialBatchSize; haudio->read_idx++,i++ ) {
+    		for(int i=0; i < initialBatchSize; i++ ) {
     			packets[i] = haudio->packets[haudio->read_idx % AUDIO_OUT_PACKET_NUM];
+    			haudio->read_idx++;
     		}
     		((USBD_AUDIO_ItfTypeDef *)pdev->pUserData)->AudioCmd(packets,
     				initialBatchSize,

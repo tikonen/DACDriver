@@ -150,7 +150,6 @@ USBD_AUDIO_ItfTypeDef USBD_AUDIO_fops_FS =
 static int idleTimer = 0;
 #define ZERO_LEVEL (2047U << 4) // 0x7FF
 #define MS_PER_BATCH AUDIO_PACKET_BATCH
-int isIdle = 0;
 
 //#define AUDIO_CHANNELS 2
 //#define AUDIO_SAMPLES_PER_CHANNEL  (AUDIO_PACKET_BATCH * AUDIO_OUT_PACKET / AUDIO_CHANNELS / sizeof(uint16_t))
@@ -485,19 +484,21 @@ static int8_t AUDIO_DeInit_FS(uint32_t options)
 
 #define CMD_QUEUE_LEN 4
 
-struct AudioCommand
+static struct AudioCommand
 {
 	uint8_t *packets[AUDIO_PACKET_BATCH*2];
 	uint32_t count;
 	uint8_t sync;
 	uint8_t cmd;
 } audioCommands[CMD_QUEUE_LEN] __attribute__((section(".ccmram")));
-uint32_t cmdReadIdx = 0;
-uint32_t cmdWriteIdx = 0;
+static uint32_t cmdReadIdx = 0;
+static uint32_t cmdWriteIdx = 0;
 
 // Called from main loop, interrupt may happen at any time.
 void Process_Audio_Command()
 {
+	static int isIdle = 0;
+
 	if(cmdWriteIdx - cmdReadIdx == 0) return;
 
 	struct AudioCommand *cmd = &audioCommands[cmdReadIdx % CMD_QUEUE_LEN];
