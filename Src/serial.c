@@ -5,13 +5,13 @@
 #define UART_RINGBUFFER_SIZE 512
 
 typedef struct {
+	uint8_t buffer[UART_RINGBUFFER_SIZE];
 	volatile uint32_t ridx;
 	volatile uint32_t widx;
-	uint8_t buffer[UART_RINGBUFFER_SIZE];
 } RingByteBuffer;
 
-static RingByteBuffer sUartBufferTX;
-static RingByteBuffer sUartBufferRX;
+static RingByteBuffer __attribute__((aligned(4))) sUartBufferTX;
+static RingByteBuffer __attribute__((aligned(4))) sUartBufferRX;
 
 static inline uint32_t rb_avail(const RingByteBuffer *buffer)
 {

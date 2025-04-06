@@ -119,7 +119,11 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
     hdma_dac1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
     hdma_dac1.Init.Mode = DMA_CIRCULAR;
     hdma_dac1.Init.Priority = DMA_PRIORITY_MEDIUM;
-    hdma_dac1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    hdma_dac1.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
+    hdma_dac1.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
+    hdma_dac1.Init.PeriphBurst = DMA_PBURST_SINGLE;
+    hdma_dac1.Init.MemBurst = DMA_MBURST_INC4;
+
     if (HAL_DMA_Init(&hdma_dac1) != HAL_OK)
     {
       Error_Handler();
@@ -296,7 +300,12 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     hdma_usart2_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_usart2_tx.Init.Mode = DMA_NORMAL;
     hdma_usart2_tx.Init.Priority = DMA_PRIORITY_LOW;
-    hdma_usart2_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    hdma_usart2_tx.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
+    hdma_usart2_tx.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_HALFFULL;
+    hdma_usart2_tx.Init.PeriphBurst = DMA_PBURST_SINGLE;
+    // any other size than single requires that buffers are aligned to 1024B as burst cannot cross it.
+    hdma_usart2_tx.Init.MemBurst = DMA_MBURST_SINGLE;
+
     if (HAL_DMA_Init(&hdma_usart2_tx) != HAL_OK)
     {
       Error_Handler();
