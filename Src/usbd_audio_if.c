@@ -162,7 +162,7 @@ typedef struct
 } DMASample;
 
 // Interleaved dma buffer
-static DMASample __attribute__((aligned(4))) dmaBuffer[2 /* circular double buffer */ * DMA_SAMPLE_COUNT];
+static DMASample __attribute__((aligned(0x400))) dmaBuffer[2 /* circular double buffer */ * DMA_SAMPLE_COUNT];
 
 #define SIN_WAV_FREQ 100
 
