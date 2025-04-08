@@ -25,8 +25,9 @@ def main():
 
     outfilename = f'{name}-{git_sha}{ext}'
 
-    shutil.copy(filename, os.path.join('Binaries', outfilename))
-    print(f"{filename} -> {outfilename}")
+    outpath = os.path.join('Binaries', outfilename)
+    shutil.copy(filename, outpath)
+    print(f"{filename} -> {outpath}")
 
 
 if __name__ == "__main__":

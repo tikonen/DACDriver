@@ -10,12 +10,13 @@ add_compile_options(
     -mthumb
     -mfloat-abi=hard
     -mfpu=fpv4-sp-d16
-    -specs=nosys.specs	
+    -specs=nosys.specs
     -ffunction-sections
     -Wall
     -Wextra
     -Wno-unused-parameter
 	-fmessage-length=0
+    -fstack-usage
     )
 
 add_compile_definitions(

@@ -28,7 +28,7 @@ cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 
 project(DACDriver LANGUAGES C ASM)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -38,29 +38,29 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 add_executable(${PROJECT_NAME}.elf)
 
-target_compile_options(${PROJECT_NAME}.elf PUBLIC $<$<CONFIG:Debug>:-Og -gdwarf-4 -g3 -fvar-tracking-assignments>)
-target_compile_options(${PROJECT_NAME}.elf PUBLIC $<$<CONFIG:Release>:-O>)
+#target_compile_options(${PROJECT_NAME}.elf PUBLIC $<$<CONFIG:Debug>:-Og -gdwarf-4 -g3 -fvar-tracking-assignments>)
+#target_compile_options(${PROJECT_NAME}.elf PUBLIC $<$<CONFIG:Release>:-O>)
 
 file(
     GLOB_RECURSE _source_list
     LIST_DIRECTORIES false
-	"${CMAKE_SOURCE_DIR}/Drivers/*.c"
-	"${CMAKE_SOURCE_DIR}/Middlewares/*.c"
+	  "${CMAKE_SOURCE_DIR}/Drivers/*.c"
+	  "${CMAKE_SOURCE_DIR}/Middlewares/*.c"
     "${CMAKE_SOURCE_DIR}/Src/*.c"
-	"${CMAKE_SOURCE_DIR}/startup/*.s"	
+	  "${CMAKE_SOURCE_DIR}/startup/*.s"
 )
 
 target_sources(${PROJECT_NAME}.elf PRIVATE ${_source_list})
 
-include_directories (		
+include_directories (
     Inc
-	Drivers/STM32F4xx_HAL_Driver/Inc	
-	Middlewares/ST/STM32_USB_Device_Library/Core/Inc
-	Middlewares/ST/STM32_USB_Device_Library/Class/AUDIO/Inc
-	Drivers/CMSIS/Device/ST/STM32F4xx/Include
-	Drivers/CMSIS/Include
-	Middlewares/Third_Party/FreeRTOS/Source/include	
-	Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F
+	  Drivers/STM32F4xx_HAL_Driver/Inc
+	  Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+	  Middlewares/ST/STM32_USB_Device_Library/Class/AUDIO/Inc
+	  Drivers/CMSIS/Device/ST/STM32F4xx/Include
+	  Drivers/CMSIS/Include
+	  Middlewares/Third_Party/FreeRTOS/Source/include
+	  Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 )
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F407VGTx_FLASH.ld)
@@ -68,14 +68,15 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F407VGTx_FLASH.ld)
 target_link_options(${PROJECT_NAME}.elf
     PRIVATE
     -T${LINKER_SCRIPT} -Wl,--gc-sections -Wl,-Map=${PROJECT_NAME}.map)
-target_link_libraries(${PROJECT_NAME}.elf m)  
+
+target_link_libraries(${PROJECT_NAME}.elf m)
 set_target_properties(${PROJECT_NAME}.elf PROPERTIES LINK_DEPENDS ${LINKER_SCRIPT})
 
 
-add_custom_target( compiler_version ALL
-  COMMAND
-    ${CMAKE_C_COMPILER} --version 
-  )
+#add_custom_target( compiler_version ALL
+#  COMMAND
+#    ${CMAKE_C_COMPILER} --version
+#  )
 
 add_custom_target(${PROJECT_NAME}.bin ALL
     COMMAND
