@@ -20,8 +20,10 @@ static inline uint32_t rb_avail(const RingByteBuffer *buffer)
 
 extern UART_HandleTypeDef huart2;
 
-#define enter_CRITICAL() __disable_irq()
+#define enter_CRITICAL()  __disable_irq()
 #define exit_CRITICAL()  __enable_irq()
+#define enter_CRITICAL_ISR() uint32_t primask = __get_PRIMASK(); __disable_irq()
+#define exit_CRITICAL_ISR()  __set_PRIMASK(primask)
 
 static void uart_transmit_pending(UART_HandleTypeDef *huart)
 {
@@ -41,6 +43,23 @@ static void _putchar_unsafe(char c, void *arg)
 {
 	(void)arg;
 	sUartBufferTX.buffer[sUartBufferTX.widx++ % UART_RINGBUFFER_SIZE] = c;
+}
+
+void serial_isr_printfln_ts(const char *format, ...)
+{
+	va_list arglist;
+	const uint32_t ts = HAL_GetTick();
+	const uint32_t sec = ts / 1000;
+	const uint32_t ms = ts - sec * 1000;
+
+	enter_CRITICAL_ISR();
+	fctprintf(_putchar_unsafe, NULL, "[% 3u.%03u] ", sec, ms);
+	va_start(arglist, format);
+	vfctprintf(_putchar_unsafe, NULL, format, arglist);
+	va_end(arglist);
+	_putchar_unsafe('\n', NULL);
+	uart_transmit_pending(&huart2);
+	exit_CRITICAL_ISR();
 }
 
 void serial_printfln_ts(const char *format, ...)

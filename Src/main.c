@@ -121,7 +121,7 @@ int main(void)
   initDMA();
 
   LOG("=============================");
-  LOG("DACDriver v1.0 " __DATE__);
+  LOG("DACDriver v1.0.1 " __DATE__);
 
   // Green led on
   HAL_GPIO_WritePin(LED_PORT, GREEN_LED_PIN, GPIO_PIN_SET);

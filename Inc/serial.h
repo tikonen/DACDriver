@@ -7,6 +7,7 @@
 void serial_writestr(const char *str);
 void serial_putchar(char c);
 void serial_printfln_ts(const char* format, ...);
+void serial_isr_printfln_ts(const char* format, ...);
 #define serial_printf(...) printf(__VA_ARGS__)
 #define serial_printfln(format, ...) printf(format SER_EOL, ##__VA_ARGS__)
 #define serial_print(str) serial_writestr(str)
@@ -16,3 +17,4 @@ char serial_getchar();
 void start_receive();
 
 #define LOG(fmt, ...) serial_printfln_ts(fmt, ##__VA_ARGS__)
+#define LOGISR(fmt, ...) serial_isr_printfln_t(fmt, ##__VA_ARGS__)
